@@ -1,0 +1,62 @@
+site_name: Ridge
+site_description: Named resources and explicit capabilities for AI agents
+site_url: https://vasinov.github.io/ridge-core/
+repo_url: https://github.com/vasinov/ridge-core
+repo_name: vasinov/ridge-core
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            heading_level: 2
+            members: true
+            show_root_heading: true
+            show_source: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - tables
+
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Examples:
+      - Overview: examples/index.md
+      - Sales report: examples/csv-report.md
+  - Configuration: configuration.md
+  - Frontends:
+      - CLI: cli.md
+      - MCP: mcp.md
+  - Resources:
+      - Local: resources/local.md
+      - Docker: resources/docker.md
+      - SSH: resources/ssh.md
+      - S3: resources/s3.md
+  - Guides:
+      - Copying between resources: guides/copying.md
+      - Background jobs: guides/jobs.md
+  - Concepts:
+      - Resources and capabilities: concepts/resources.md
+      - Authorization: concepts/authorization.md
+  - Resource providers: providers.md
+  - Architecture: architecture.md
+  - Python API: python-api.md
+  - Security model: security.md
+  - Development: development.md

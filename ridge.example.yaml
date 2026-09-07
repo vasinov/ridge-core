@@ -1,0 +1,40 @@
+resources:
+  local:
+    provider: local
+    root: .
+
+  project-files:
+    provider: local
+    root: .
+    properties:
+      purpose: source-code
+
+  # Docker resources refer to containers that Ridge does not manage.
+  # build:
+  #   provider: docker
+  #   container: ridge-build
+  #   root: /workspace
+  #   python: python3
+
+  # SSH resources use ambient OpenSSH configuration and credentials.
+  # build-host:
+  #   provider: ssh
+  #   host: build.example.com
+  #   user: ridge
+  #   root: /srv/ridge/workspace
+  #   python: python3
+
+  # S3 resources use Boto3's ambient credential chain.
+  # artifacts:
+  #   provider: s3
+  #   bucket: example-artifacts
+  #   prefix: ridge/runs
+  #   region: us-west-2
+
+# Omit permissions for unrestricted trusted mode. When present, the map is
+# default-deny and grants only the exact operations listed for each resource.
+# permissions:
+#   project-files:
+#     - data.list
+#     - data.read
+#     - data.stat

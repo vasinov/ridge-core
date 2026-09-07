@@ -1,0 +1,15 @@
+resources:
+  inputs:
+    provider: local
+    root: ./inputs
+  worker:
+    provider: local
+    root: ./worker
+  reports:
+    provider: local
+    root: ./reports
+
+permissions:
+  inputs: [data.list, data.read, data.stat]
+  worker: [compute.exec, data.list, data.read, data.write, data.stat]
+  reports: [data.list, data.read, data.write, data.stat]

@@ -1,0 +1,55 @@
+# CLI
+
+The `ridge` command is a Typer frontend over the same application service used
+by MCP.
+
+```text
+ridge resources
+ridge inspect RESOURCE
+ridge exec RESOURCE -- ARGV...
+ridge copy RESOURCE:PATH RESOURCE:PATH
+ridge list RESOURCE [PATH] [--limit N] [--cursor TOKEN]
+ridge read RESOURCE PATH
+ridge write RESOURCE PATH (--text TEXT | --from FILE)
+ridge stat RESOURCE PATH
+ridge jobs list
+ridge jobs inspect JOB_ID
+ridge jobs logs JOB_ID [--stream stdout|stderr] [--offset N]
+ridge jobs cancel JOB_ID
+```
+
+Use `ridge COMMAND --help` for frontend options and output details.
+`ridge resources` and `ridge inspect` show both supported and policy-allowed
+operations. An authorization denial is an expected Ridge error and exits with
+status 2 before the target capability is invoked.
+
+Commands are always argument vectors. Ridge never adds an implicit shell:
+
+```bash
+ridge exec local -- sh -lc 'printf "%s\n" "$PWD"'
+```
+
+The exit status from `ridge exec` is the child exit status. Timeout returns
+status 124. Standard output and standard error remain separate.
+
+Data commands use filesystem paths or exact object keys according to resource
+addressing. `list` returns a JSON page (`addressing`, `entries`, `next_cursor`);
+`stat` returns filesystem or object metadata. See [data semantics](concepts/resources.md).
+
+Add `--background` to `exec`, `write`, or `copy` to submit an
+immediate durable job. Add `--idempotency-key KEY` when an agent may retry the
+same submission. The command prints `submitted JOB_ID`; use the `jobs`
+subcommands to reconnect to it.
+
+Execution has no timeout by default in either foreground or background mode.
+Pass `--timeout SECONDS` to bound it explicitly.
+
+`--cwd` is relative to the resource root. Execution is noninteractive.
+`write` also accepts bytes from stdin when neither `--text` nor `--from` is given;
+all three direct-write forms buffer the payload. Use `copy` for large files.
+
+`jobs list` currently prints every authorized job as ID/kind/status/submission
+time rows without pagination. `jobs inspect` emits JSON including results and
+errors; a `succeeded` execution
+job can still have a nonzero `result.exit_code`. See [Background jobs](guides/jobs.md)
+for log paging, retention, configuration-change rejection, and cancellation limits.

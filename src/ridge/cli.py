@@ -1,0 +1,281 @@
+from __future__ import annotations
+
+import json
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass
+from functools import wraps
+from pathlib import Path
+from typing import Annotated, ParamSpec, TypeVar, cast
+
+import typer
+
+from ridge.application import RidgeService
+from ridge.errors import ExecutionTimeoutError, RidgeError
+
+app = typer.Typer(
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+    help="Execute and access data on named resources.",
+)
+jobs_app = typer.Typer(no_args_is_help=True, help="Observe and cancel durable background jobs.")
+app.add_typer(jobs_app, name="jobs")
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+@dataclass(frozen=True, slots=True)
+class _AppState:
+    config: Path
+
+
+def _handle_errors(function: Callable[_P, _R]) -> Callable[_P, _R]:
+    @wraps(function)
+    def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        try:
+            return function(*args, **kwargs)
+        except ExecutionTimeoutError as exc:
+            typer.echo(f"ridge: {exc}", err=True)
+            raise typer.Exit(code=124) from exc
+        except (RidgeError, OSError, ValueError) as exc:
+            typer.echo(f"ridge: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+
+    return wrapped
+
+
+@app.callback()
+def configure(
+    ctx: typer.Context,
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            envvar="RIDGE_CONFIG",
+            help="Resource configuration.",
+        ),
+    ] = Path("ridge.yaml"),
+) -> None:
+    """Configure the Ridge command invocation."""
+    ctx.obj = _AppState(config=config)
+
+
+def _service(ctx: typer.Context) -> RidgeService:
+    state = cast(_AppState, ctx.obj)
+    return RidgeService.from_config(state.config)
+
+
+def _write_content(text: str | None, source_path: Path | None) -> bytes:
+    if text is not None and source_path is not None:
+        raise RidgeError("--text and --from are mutually exclusive")
+    if text is not None:
+        return text.encode()
+    if source_path is not None:
+        return source_path.read_bytes()
+    return typer.get_binary_stream("stdin").read()
+
+
+@app.command("resources")
+@_handle_errors
+def resources_command(ctx: typer.Context) -> None:
+    """List configured resources and their supported and allowed operations."""
+    typer.echo("NAME\tPROVIDER\tADDRESSING\tCOPY\tSUPPORTED\tALLOWED\tBACKGROUND")
+    for inspection in _service(ctx).list_resources():
+        supported = ",".join(operation.value for operation in inspection.supported_operations)
+        allowed = ",".join(operation.value for operation in inspection.allowed_operations)
+        background = ",".join(operation.value for operation in inspection.background_operations)
+        typer.echo(
+            f"{inspection.name}\t{inspection.provider}\t{inspection.addressing or '-'}\t"
+            f"{inspection.supports_copy}\t{supported}\t{allowed}\t{background}"
+        )
+
+
+@app.command("inspect")
+@_handle_errors
+def inspect_command(ctx: typer.Context, resource: str) -> None:
+    """Inspect one resource's operations and properties."""
+    inspection = _service(ctx).inspect_resource(resource)
+    payload = asdict(inspection)
+    payload["supported_operations"] = [
+        operation.value for operation in inspection.supported_operations
+    ]
+    payload["allowed_operations"] = [operation.value for operation in inspection.allowed_operations]
+    payload["background_operations"] = [
+        operation.value for operation in inspection.background_operations
+    ]
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+
+
+@app.command(
+    "exec",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+@_handle_errors
+def exec_command(
+    ctx: typer.Context,
+    resource: str,
+    cwd: Annotated[str | None, typer.Option(help="Resource-relative working directory.")] = None,
+    timeout: Annotated[
+        float | None, typer.Option(min=0, help="Execution timeout in seconds.")
+    ] = None,
+    background: Annotated[bool, typer.Option(help="Submit a durable job.")] = False,
+    idempotency_key: Annotated[
+        str | None, typer.Option(help="Deduplicate a retried background submission.")
+    ] = None,
+) -> None:
+    """Execute ARGV on a compute resource; put ARGV after '--'."""
+    command = list(ctx.args)
+    if command[:1] == ["--"]:
+        command = command[1:]
+    if not command:
+        raise RidgeError("exec requires a command after '--'")
+    service = _service(ctx)
+    if background:
+        job = service.submit_execution(
+            resource,
+            command,
+            cwd=cwd,
+            timeout_seconds=timeout,
+            idempotency_key=idempotency_key,
+        )
+        typer.echo(f"submitted {job.id}")
+        return
+    if idempotency_key is not None:
+        raise RidgeError("--idempotency-key requires --background")
+    result = service.execute(resource, command, cwd=cwd, timeout_seconds=timeout)
+    typer.get_binary_stream("stdout").write(result.stdout)
+    typer.get_binary_stream("stderr").write(result.stderr)
+    if result.exit_code:
+        raise typer.Exit(code=result.exit_code)
+
+
+@app.command("list")
+@_handle_errors
+def list_command(
+    ctx: typer.Context,
+    resource: str,
+    path: Annotated[
+        str | None, typer.Argument(help="Relative directory or exact key prefix.")
+    ] = None,
+    cursor: Annotated[str | None, typer.Option(help="Opaque continuation token.")] = None,
+    limit: Annotated[int, typer.Option(min=1, max=1000, help="Maximum entries to return.")] = 100,
+) -> None:
+    """List one page of directory children or object-prefix matches."""
+    page = _service(ctx).list_data(resource, path, cursor=cursor, limit=limit)
+    typer.echo(json.dumps(asdict(page), sort_keys=True))
+
+
+@app.command("read")
+@_handle_errors
+def read_command(
+    ctx: typer.Context,
+    resource: str,
+    path: str,
+    max_bytes: Annotated[int | None, typer.Option(help="Reject a larger result.")] = None,
+) -> None:
+    """Read a file or object's bytes to stdout (buffered)."""
+    content = _service(ctx).read_data(resource, path, max_bytes=max_bytes)
+    typer.get_binary_stream("stdout").write(content)
+
+
+@app.command("write")
+@_handle_errors
+def write_command(
+    ctx: typer.Context,
+    resource: str,
+    path: str,
+    text: Annotated[str | None, typer.Option(help="UTF-8 text to write.")] = None,
+    source_path: Annotated[
+        Path | None,
+        typer.Option("--from", exists=True, dir_okay=False, readable=True, help="File to read."),
+    ] = None,
+    background: Annotated[bool, typer.Option(help="Submit a durable job.")] = False,
+    idempotency_key: Annotated[
+        str | None, typer.Option(help="Deduplicate a retried background submission.")
+    ] = None,
+) -> None:
+    """Write bytes from stdin, --text, or --from."""
+    content = _write_content(text, source_path)
+    service = _service(ctx)
+    if background:
+        job = service.submit_write(resource, path, content, idempotency_key=idempotency_key)
+        typer.echo(f"submitted {job.id}")
+        return
+    if idempotency_key is not None:
+        raise RidgeError("--idempotency-key requires --background")
+    service.write_data(resource, path, content)
+
+
+@app.command("stat")
+@_handle_errors
+def stat_command(ctx: typer.Context, resource: str, path: str) -> None:
+    """Inspect a filesystem path or exact object key."""
+    typer.echo(json.dumps(asdict(_service(ctx).stat_data(resource, path))))
+
+
+@app.command("copy")
+@_handle_errors
+def copy_command(
+    ctx: typer.Context,
+    source: str,
+    destination: str,
+    background: Annotated[bool, typer.Option(help="Submit a durable job.")] = False,
+    idempotency_key: Annotated[
+        str | None, typer.Option(help="Deduplicate a retried background submission.")
+    ] = None,
+) -> None:
+    """Copy a file or directory tree between exact resource locations."""
+    service = _service(ctx)
+    if background:
+        job = service.submit_copy(source, destination, idempotency_key=idempotency_key)
+        typer.echo(f"submitted {job.id}")
+        return
+    if idempotency_key is not None:
+        raise RidgeError("--idempotency-key requires --background")
+    result = service.copy(source, destination)
+    entry_label = "entry" if result.entries_copied == 1 else "entries"
+    typer.echo(f"copied {result.bytes_copied} bytes in {result.entries_copied} {entry_label}")
+
+
+@jobs_app.command("list")
+@_handle_errors
+def jobs_list_command(ctx: typer.Context) -> None:
+    """List jobs visible under the current resource policy."""
+    typer.echo("ID\tKIND\tSTATUS\tSUBMITTED")
+    for job in _service(ctx).list_jobs():
+        typer.echo(f"{job.id}\t{job.kind.value}\t{job.status.value}\t{job.submitted_at}")
+
+
+@jobs_app.command("inspect")
+@_handle_errors
+def jobs_inspect_command(ctx: typer.Context, job_id: str) -> None:
+    """Inspect one durable job."""
+    typer.echo(json.dumps(asdict(_service(ctx).inspect_job(job_id)), indent=2, sort_keys=True))
+
+
+@jobs_app.command("logs")
+@_handle_errors
+def jobs_logs_command(
+    ctx: typer.Context,
+    job_id: str,
+    stream: Annotated[str, typer.Option(help="stdout or stderr.")] = "stdout",
+    offset: Annotated[int, typer.Option(min=0, help="Byte offset.")] = 0,
+    limit: Annotated[
+        int, typer.Option(min=1, max=1024 * 1024, help="Maximum bytes to return.")
+    ] = 64 * 1024,
+) -> None:
+    """Read a bounded byte range from a job log."""
+    log = _service(ctx).read_job_log(job_id, stream, offset=offset, limit=limit)
+    typer.get_binary_stream("stdout").write(log.content)
+
+
+@jobs_app.command("cancel")
+@_handle_errors
+def jobs_cancel_command(ctx: typer.Context, job_id: str) -> None:
+    """Request cancellation and report the resulting observed state."""
+    job = _service(ctx).cancel_job(job_id)
+    typer.echo(f"{job.id}\t{job.status.value}")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    app(args=list(argv) if argv is not None else None, prog_name="ridge")

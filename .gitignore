@@ -1,0 +1,18 @@
+.venv/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.idea
+ridge.yaml
+!/docs/examples/assets/ridge.yaml
+site/
+/.pytest_cache/
+/.ruff_cache/
+/dist/
+/ridge-demo/
+
+# Maintainer-local agent context and runtime state.
+/.agent-local/
+/AGENTS.override.md
+/CLAUDE.local.md
+/.ridge/
