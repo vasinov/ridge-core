@@ -4,9 +4,11 @@ import stat
 import sys
 import tarfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from ridge._job_process import in_job_worker
 from ridge.backends._transfer_helper import TRANSFER_HELPER_SOURCE
 from ridge.backends.docker import DockerResource
 from ridge.backends.local import LocalResource
@@ -27,6 +29,26 @@ from ridge.transfer import copy
 
 def _request(source: str, destination: str) -> CopyRequest:
     return CopyRequest(ResourceLocation.parse(source), ResourceLocation.parse(destination))
+
+
+@pytest.mark.parametrize("background", [False, True])
+def test_transfer_process_session_follows_job_ownership(tmp_path: Path, background: bool) -> None:
+    import subprocess
+
+    (tmp_path / "source").write_bytes(b"owned transfer")
+    registry = ResourceRegistry([LocalResource("local", tmp_path)])
+    token = in_job_worker.set(background)
+    try:
+        with patch("subprocess.Popen", wraps=subprocess.Popen) as launch:
+            result = copy(registry, _request("local:source", "local:output"))
+        assert result.bytes_copied == 14
+        assert len(launch.call_args_list) >= 3  # export, staging, publication control
+        assert all(
+            call.kwargs["start_new_session"] is not background for call in launch.call_args_list
+        )
+        assert (tmp_path / "output").read_bytes() == b"owned transfer"
+    finally:
+        in_job_worker.reset(token)
 
 
 def test_reusable_file_transfer_conformance(tmp_path: Path) -> None:

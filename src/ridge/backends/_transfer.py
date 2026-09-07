@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from typing import BinaryIO, cast
 
+from ridge._job_process import in_job_worker
 from ridge.errors import (
     DestinationExistsError,
     InvalidPathError,
@@ -196,7 +197,7 @@ class ProcessTransferOperations:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 # The coordinator must receive Ctrl-C so it can close both endpoints.
-                start_new_session=True,
+                start_new_session=not in_job_worker.get(),
             )
         except OSError as exc:
             raise ResourceUnavailableError(
@@ -210,7 +211,7 @@ class ProcessTransferOperations:
                 input=_request_bytes(request),
                 capture_output=True,
                 check=False,
-                start_new_session=True,
+                start_new_session=not in_job_worker.get(),
             )
         except OSError as exc:
             raise ResourceUnavailableError(

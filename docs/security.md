@@ -43,7 +43,10 @@ contain sensitive data. Metadata and logs have no automatic expiration. Ignore
 `.ridge/` (and any custom job directory) in your own repository and review
 artifacts before publishing. See [retention](guides/jobs.md#retention-and-sensitive-data).
 
-Job cancellation is not a containment boundary or proof of process termination.
+Job cancellation verifies shutdown only of the owned local worker group. It is
+not a containment boundary, rollback, or proof of remote/detached-process termination.
+An uncertain outcome is `lost`; staged payloads may remain to avoid deleting data
+under a live worker. Recovery never signals a stored PID without live ownership.
 Review the [current limitations](guides/jobs.md#current-limitations) before using
 it to stop work with external side effects.
 

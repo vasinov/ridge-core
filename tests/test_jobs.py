@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+# These tests deliberately exercise internal crash and ownership boundaries.
+# pyright: reportPrivateUsage=false
+import fcntl
+import os
+import signal
+import subprocess
 import sys
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
+from ridge import jobs
 from ridge.application import RidgeService
 from ridge.authorization import AuthorizationPolicy
 from ridge.backends.local import LocalResource
@@ -191,3 +200,271 @@ def test_job_listing_is_filtered_by_current_underlying_grants(tmp_path: Path) ->
     assert hidden.list_jobs() == ()
     with pytest.raises(AuthorizationDeniedError, match="authorization denied for job"):
         hidden.inspect_job(job.id)
+
+
+def _unstarted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[JobManager, str]:
+    config = _config(tmp_path)
+    import hashlib
+
+    manager = JobManager(
+        tmp_path / "job-state", config, hashlib.sha256(config.read_bytes()).hexdigest()
+    )
+
+    def no_spawn(*args: object, **kwargs: object) -> None:
+        return None
+
+    with monkeypatch.context() as patch:
+        patch.setattr(jobs.subprocess, "Popen", no_spawn)
+        job = manager.submit(
+            JobKind.WRITE,
+            (JobScope("local", Operation.DATA_WRITE),),
+            {"resource": "local", "path": "output"},
+            payload=b"staged",
+            idempotency_key="retry",
+        )
+    return manager, job.id
+
+
+def _expire(manager: JobManager, job_id: str) -> None:
+    with manager.connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET submitted_at = ? WHERE id = ?",
+            ((datetime.now(UTC) - timedelta(seconds=31)).isoformat(), job_id),
+        )
+
+
+def test_expired_start_is_lost_and_late_supervisor_cannot_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    assert manager.get(job_id).status is JobStatus.STARTING
+    _expire(manager, job_id)
+    # Even without a prior observer, the supervisor itself must enforce expiry.
+    assert jobs._run(manager.directory, job_id) == 0
+    assert manager.get(job_id).status is JobStatus.LOST
+    assert not (tmp_path / "output").exists()
+    assert not (manager.directory / job_id / "payload.bin").exists()
+    assert jobs._run(manager.directory, job_id) == 0
+
+
+def test_idempotent_retry_reconciles_expired_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    _expire(manager, job_id)
+    repeated = manager.submit(
+        JobKind.WRITE,
+        (JobScope("local", Operation.DATA_WRITE),),
+        {"resource": "local", "path": "output"},
+        payload=b"staged",
+        idempotency_key="retry",
+    )
+    assert repeated.id == job_id
+    assert repeated.status is JobStatus.LOST
+    assert not (tmp_path / "output").exists()
+
+
+def test_cancel_before_start_fences_late_supervisor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    assert manager.cancel(job_id).status is JobStatus.CANCELLED
+    assert jobs._run(manager.directory, job_id) == 0
+    assert not (tmp_path / "output").exists()
+
+
+def test_live_owner_prevents_reconciliation_and_duplicate_supervision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    _expire(manager, job_id)
+    with (manager.directory / job_id / "owner.lock").open("a+b") as owner:
+        fcntl.flock(owner, fcntl.LOCK_EX)
+        assert manager.get(job_id).status is JobStatus.STARTING
+        assert jobs._run(manager.directory, job_id) == 0
+    assert manager.get(job_id).status is JobStatus.LOST
+
+
+def test_observer_lock_does_not_discard_supervisor_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    with (manager.directory / job_id / "owner.lock").open("a+b") as observer:
+        fcntl.flock(observer, fcntl.LOCK_EX)
+        supervisor = subprocess.Popen(
+            [sys.executable, "-m", "ridge.jobs", "run", str(manager.directory), job_id]
+        )
+        time.sleep(0.3)
+        assert supervisor.poll() is None
+    assert supervisor.wait(timeout=5) == 0
+    assert manager.get(job_id).status is JobStatus.SUCCEEDED
+    assert (tmp_path / "output").read_bytes() == b"staged"
+
+
+def test_completed_result_wins_late_cancellation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    assert manager.finish(job_id, JobStatus.SUCCEEDED, result={"bytes_written": 6})
+    original = manager.get(job_id)
+    assert manager.cancel(job_id) == original
+    assert not original.cancellation_requested
+
+
+def test_lost_owner_never_signals_persisted_pid_or_deletes_live_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    with manager.connect() as connection:
+        connection.execute("UPDATE jobs SET status = 'running', pid = ?", (os.getpid(),))
+
+    def forbidden(*args: object) -> None:
+        raise AssertionError("must not signal a persisted PID")
+
+    monkeypatch.setattr(os, "killpg", forbidden)
+    job = manager.cancel(job_id)
+    assert job.status is JobStatus.LOST
+    assert job.error and "unverified" in job.error
+    assert (manager.directory / job_id / "payload.bin").read_bytes() == b"staged"
+
+
+def test_cancellation_wins_completion_and_terminal_result_is_immutable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    with manager.connect() as connection:
+        connection.execute("UPDATE jobs SET cancellation_requested = 1 WHERE id = ?", (job_id,))
+    assert not manager.finish(job_id, JobStatus.SUCCEEDED, result={"bytes_written": 6})
+    assert (manager.directory / job_id / "payload.bin").exists()
+    assert manager.finish(job_id, JobStatus.CANCELLED)
+    original = manager.get(job_id)
+    assert not manager.finish(job_id, JobStatus.FAILED, error="late failure")
+    assert manager.cancel(job_id) == original
+
+
+def test_cleanup_failure_is_visible_without_rewriting_operation_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    payload = manager.directory / job_id / "payload.bin"
+    unlink = Path.unlink
+
+    def deny(path: Path, missing_ok: bool = False) -> None:
+        if path == payload:
+            raise PermissionError("test cleanup denial")
+        unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", deny)
+    assert manager.finish(job_id, JobStatus.SUCCEEDED, result={"bytes_written": 6})
+    job = manager.get(job_id)
+    assert job.status is JobStatus.SUCCEEDED
+    assert job.result == {"bytes_written": 6}
+    assert job.error and "cleanup failed" in job.error
+    assert payload.exists()
+
+
+def test_closed_startup_gate_never_executes_work(tmp_path: Path) -> None:
+    read_gate, write_gate = os.pipe()
+    os.close(write_gate)
+    # No config/job files even exist: the worker must exit before loading them.
+    assert jobs._work(tmp_path, "absent", read_gate) == 2
+
+
+def test_interrupted_payload_staging_rolls_back_and_removes_new_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    before = set(manager.directory.iterdir())
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", Mock(side_effect=KeyboardInterrupt("interrupted staging")))
+        with pytest.raises(KeyboardInterrupt):
+            manager.submit(
+                JobKind.WRITE,
+                (JobScope("local", Operation.DATA_WRITE),),
+                {"resource": "local", "path": "other"},
+                payload=b"other",
+            )
+    assert set(manager.directory.iterdir()) == before
+    assert [job.id for job in manager.list()] == [job_id]
+
+
+def test_ps_failure_is_not_proof_of_termination(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable(*args: object, **kwargs: object) -> None:
+        raise subprocess.TimeoutExpired("ps", 1)
+
+    monkeypatch.setattr(jobs.subprocess, "run", unavailable)
+    with pytest.raises(subprocess.TimeoutExpired):
+        jobs._live_group(123)
+
+
+def test_stopped_group_is_reaped_without_signalling(monkeypatch: pytest.MonkeyPatch) -> None:
+    process = Mock(spec=subprocess.Popen)
+    process.pid = 123
+    monkeypatch.setattr(jobs, "_live_group", Mock(return_value=False))
+    signal_group = Mock(side_effect=AssertionError("must not signal an exited group"))
+    monkeypatch.setattr(os, "killpg", signal_group)
+    assert jobs._stop_group(process)
+    process.wait.assert_called_once_with(timeout=1)
+    signal_group.assert_not_called()
+
+
+def test_signal_denial_requires_fresh_termination_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    process = Mock(spec=subprocess.Popen)
+    process.pid = 123
+    live = Mock(side_effect=[True, False])
+    monkeypatch.setattr(jobs, "_live_group", live)
+    monkeypatch.setattr(os, "killpg", Mock(side_effect=PermissionError("exited concurrently")))
+    assert jobs._stop_group(process)
+    assert live.call_count == 2
+    monkeypatch.setattr(jobs, "_live_group", Mock(return_value=True))
+    with pytest.raises(PermissionError):
+        jobs._stop_group(process)
+
+
+def test_cancel_verifies_sigterm_resistant_descendant(tmp_path: Path) -> None:
+    service = RidgeService.from_config(_config(tmp_path))
+    code = (
+        "import os,signal,subprocess,sys,time; "
+        "child=subprocess.Popen([sys.executable,'-c',"
+        "'import os,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "print(os.getpid(), flush=True); time.sleep(25)']); "
+        "child.wait()"
+    )
+    job = service.submit_execution("local", [sys.executable, "-c", code])
+    pid: int | None = None
+    group: int | None = None
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            content = service.read_job_log(job.id, "stdout").content
+            if content.strip():
+                pid = int(content.strip())
+                break
+            time.sleep(0.02)
+        assert pid is not None
+        group = os.getpgid(pid)
+        started = time.monotonic()
+        result = service.cancel_job(job.id)
+        assert result.status is JobStatus.CANCELLED
+        assert result.cancellation_requested
+        assert time.monotonic() - started >= 4.5
+        assert not jobs._live_group(group)
+        assert service.read_job_log(job.id, "stdout").complete
+    finally:
+        if pid is not None:
+            # Only the exact test child, and only while still in its owned group.
+            try:
+                if os.getpgid(pid) == group:
+                    os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass

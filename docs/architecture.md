@@ -254,7 +254,11 @@ terminal-attempt cleanup attempts to remove staged write payloads. Crashes or
 filesystem failures can leave payloads behind.
 
 Each submission launches one detached local supervisor and records exactly one
-attempt. The supervisor reloads the original configuration and refuses to run
+attempt. The supervisor atomically claims the row within 30 seconds while holding
+a per-job advisory lock. Observers reconcile expired unclaimed submissions; late
+or duplicate supervisors cannot execute them. There is no recovery daemon or retry.
+A separate worker receives permission to run through an inherited pipe; EOF before
+handoff means no execution. The worker reloads the original configuration and refuses to run
 if its byte fingerprint changed after submission. It rechecks the underlying
 operation grants before invoking a capability. Ambient credentials, provider
 code, and downstream state can still change between submission and execution.
@@ -275,13 +279,27 @@ operation from permission to observe its job metadata.
 
 States are `starting`, `running`, `succeeded`, `failed`, `cancelled`, and
 `lost`. A nonzero child exit is a successfully completed execution attempt and
-its exit code remains in the job result. `lost` means a supervisor disappeared
-without persisting a terminal result, detected when a recorded supervisor PID
-no longer exists. A submission interrupted before its PID is recorded can remain
-`starting` indefinitely. Cancellation sends SIGTERM to the locally owned
-supervisor process group and marks the attempt cancelled without waiting for
-verified termination or escalating resistant descendants. It does not prove
-local or remote process termination. See [job limitations](guides/jobs.md#current-limitations).
+its exit code remains in the job result. `lost` covers expired startup, lost
+supervisor ownership, or unverified termination, with an explicit error. The
+kernel-held ownership lock, not a potentially recycled stored PID, establishes
+whether a supervisor is present.
+
+The supervisor remains outside the worker process group. Cancellation persists
+intent before signalling; it allows five seconds after SIGTERM, then SIGKILL and
+five seconds for verification. The owned child is not reaped until signalling
+finishes, preventing reuse of its process-group identity. POSIX `ps` verifies that
+no non-zombie group members remain; inspection failure is uncertainty, not success.
+Built-in transfer helpers inherit the worker group in background mode, retaining
+their separate sessions for foreground Ctrl-C handling.
+
+Workers publish an atomic outcome file; only the supervisor publishes terminal
+job state after group shutdown. Completion and cancellation intent serialize in
+SQLite: terminal outcomes are immutable, and cancellation that wins before
+completion is recorded takes precedence. Pending cancellation survives client
+disconnect. Cleanup failures remain visible in `error`; uncertain termination
+retains staged payloads. Supervisor loss does not trigger speculative signalling.
+There is no claim of rollback, remote termination, or containment of deliberately
+detached processes. See [job limitations](guides/jobs.md#current-limitations).
 
 Local execution streams stdout and stderr into durable log files while it runs.
 Current Docker and SSH helpers return output when their operation finishes, so

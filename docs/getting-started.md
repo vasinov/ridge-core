@@ -70,10 +70,11 @@ configuration file, not the invocation directory.
 
 ## Platform expectations
 
-Ridge requires Python 3.11+. Current acceptance evidence covers a macOS host,
-Linux Docker workers, loopback POSIX OpenSSH, and S3. That is not a Windows
-support claim or coverage of every Python/platform combination. Jobs use POSIX
-process groups; Docker/SSH workers require a compatible Python 3 interpreter.
+Ridge requires Python 3.11+ on a POSIX host. Current acceptance evidence covers
+a macOS host, Linux Docker workers, loopback POSIX OpenSSH, and S3—not every
+Python/platform combination. Jobs additionally require local advisory locks and
+a compatible `ps`; see [job prerequisites](guides/jobs.md). Docker/SSH workers
+require a compatible Python 3 interpreter.
 See [Development](development.md) for verification and external-test prerequisites.
 
 ## Next steps

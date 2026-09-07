@@ -18,6 +18,11 @@ metadata and results under `jobs.directory`; per-job files store logs. Direct
 write content is staged before submission returns; terminal cleanup attempts to
 remove it. Copy sources are opened only when execution begins.
 
+Background supervision requires a POSIX host with local filesystem locking and
+`ps` supporting `-axo pid=,pgid=,stat=` (macOS and Linux procps). Keep job state
+on a local filesystem supporting SQLite and advisory locks. A supervisor owns
+one separate worker process group; built-in local copy helpers stay in that group.
+
 Use an idempotency key when a caller may lose the submission response and retry.
 The same key and identical request return the existing job. Reusing the key for
 different content or parameters fails.
@@ -26,6 +31,9 @@ Local execution logs are readable while the command runs. Docker and SSH helper
 output currently becomes readable after completion. Log reads are bounded and
 MCP returns a next byte offset for polling. CLI prints the raw page bytes; advance
 `--offset` by the number of bytes received and use `--limit` to bound each read.
+For a `lost` job, logs may still grow: the log page's `complete` flag describes
+the current terminal-record/end-of-file observation, not proof that a lost or
+detached writer has stopped.
 
 ## Status and configuration
 
@@ -33,7 +41,8 @@ States are `starting`, `running`, `succeeded`, `failed`, `cancelled`, and `lost`
 `succeeded` means Ridge completed the operation, not that an executed command
 returned zero: inspect `result.exit_code` before using its outputs. `failed`
 reports a Ridge/provider failure (including an execution timeout); `lost` means
-a recorded supervisor disappeared without a terminal result.
+the startup handoff expired, the supervisor disappeared, or local termination
+could not be verified. Inspect `error`; `lost` never proves work stopped.
 
 The supervisor reloads the original configuration and rejects the attempt if
 its byte fingerprint changed, even for a formatting-only edit. It rechecks the
@@ -41,19 +50,44 @@ underlying grants. Credentials, installed provider code, and downstream data are
 not snapshotted. Background execution rejects explicitly supplied environment
 values; it still inherits ambient credentials and environment.
 
+## Startup and cancellation
+
+The supervisor must claim a submission within 30 seconds. Inspection, listing,
+log reads, and identical idempotent resubmission reconcile an abandoned, expired
+`starting` job to `lost`. No daemon scans idle history, and recovery never retries
+the operation. Atomic claiming prevents late or duplicate supervisors from running
+a settled job. Cancellation before the claim prevents execution entirely.
+
+Cancellation first records durable intent (`cancellation_requested`). The owning
+supervisor sends SIGTERM to its worker group, allows five seconds for graceful
+shutdown, then sends SIGKILL if needed and allows five seconds for verification.
+It remains alive to record the result even if the cancelling client disconnects.
+Only verified local termination produces `cancelled`; unverified termination
+produces `lost` with an explanation. Zombies count as stopped, not live workers.
+No recovery path signals a PID merely because it appears in the database.
+
+The cancel call waits for a bounded interval (normally up to about 12 seconds,
+excluding database contention). If it returns a nonterminal job with cancellation
+requested, inspect again; a request is not confirmation. Already-persisted terminal
+outcomes do not change. If cancellation wins before completion is recorded, the
+attempt is cancelled after shutdown, even if some writes already happened.
+
+The supervisor also closes the owned worker group before publishing ordinary
+completion or failure, including any remaining descendants. Commands intended
+to leave background services running are not a supported job-lifetime mechanism.
+
 ## Current limitations
 
-Cancellation sends SIGTERM to the recorded local supervisor process group and
-marks the attempt cancelled. It does not wait for verified group termination or
-escalate resistant descendants. A cancelled status is not proof that side effects
-have stopped, even locally. For Docker/SSH it also cannot establish termination
-of processes beyond the local transport. Use an explicit execution timeout where
-appropriate; remote helpers enforce that timeout at the execution site.
+Termination verification covers the owned local group, including built-in copy
+helpers. It does not cover processes that deliberately leave the group, detached
+processes created by providers, or Docker/SSH processes beyond the local transport.
+Use an explicit execution timeout where appropriate; remote helpers enforce it
+at the execution site. Ridge remains a trusted single-user tool, not a sandbox.
 
-A crash between durable submission and recording the supervisor PID can leave a
-job `starting` indefinitely. Idempotent resubmission returns that same job; it is
-not an automatic recovery or retry mechanism. Do not blindly resubmit under a
-new key: first inspect whether the original work produced side effects.
+A supervisor crash after execution starts is reported as `lost` on observation;
+the worker may still be running. Recovery does not guess at process ownership or
+kill possibly reused PIDs. Do not blindly resubmit under a new key: first inspect
+whether the original work is still running or produced side effects.
 
 Job listing currently fetches all authorized jobs without pagination. Application
 and MCP return full records; CLI prints ID/kind/status/submission-time rows.
@@ -63,16 +97,22 @@ Unlike data listings and log reads, its response grows with history.
 
 Metadata, results, idempotency keys, and stdout/stderr logs are retained
 indefinitely under `jobs.directory` (default `.ridge/jobs` beside the config).
-There is no automatic expiration, pruning, or deletion command. Terminal cleanup
-attempts to remove staged write payloads; crashes and filesystem errors can leave
-them behind. Copy requests reference their source rather than staging its bytes
+There is no automatic expiration, pruning, or deletion command. Staged write
+payloads are removed after verified shutdown or a fenced, unstarted attempt.
+Cleanup errors appear in the job's `error` field without replacing its operation
+result; inspect that field even for a successful job. When termination is uncertain,
+payloads are retained rather than deleted underneath a possible live worker.
+A crash before a submission is committed can leave an unreferenced job directory.
+Copy requests reference their source rather than staging its bytes
 at submission, so subsequent source changes can affect the attempt.
 
 Arguments, errors, logs, results, and staged content can contain secrets or
 private data. Keep job state out of Git and public artifacts, restrict access,
 and monitor disk use. Before any manual archival or cleanup, establish that no
-supervisor or descendant is still using it; a cancelled status alone is
-insufficient. Do not delete job data as a code-upgrade step.
+supervisor, detached descendant, or remote operation is still using it. Cancellation
+is not rollback: published data stays published, and forced termination can leave
+filesystem staging or unfinished multipart uploads. Do not delete job data as a
+code-upgrade step.
 
 ## Authorization
 

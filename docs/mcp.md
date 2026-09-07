@@ -3,6 +3,12 @@
 `ridge-mcp` exposes the configured inventory over local stdio using the
 official MCP Python SDK. It has no network listener.
 
+Background cancellation records durable intent and survives a client disconnect.
+Inspect the returned job: `cancelled` confirms owned-local-group shutdown, `lost`
+means uncertainty, and a nonterminal status with `cancellation_requested` means
+the request is still pending. Cancellation is not rollback or remote termination;
+see [Background jobs](guides/jobs.md#startup-and-cancellation) for bounds and recovery.
+
 For Codex, configure absolute paths:
 
 ```toml

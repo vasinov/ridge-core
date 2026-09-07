@@ -41,6 +41,11 @@ immediate durable job. Add `--idempotency-key KEY` when an agent may retry the
 same submission. The command prints `submitted JOB_ID`; use the `jobs`
 subcommands to reconnect to it.
 
+`jobs cancel` records durable intent and waits a bounded interval for shutdown.
+Inspect its returned status: `cancelled` confirms owned-local-group termination,
+`lost` means uncertainty, and a nonterminal result means cancellation is still
+pending. Cancellation does not roll back writes or prove remote termination.
+
 Execution has no timeout by default in either foreground or background mode.
 Pass `--timeout SECONDS` to bound it explicitly.
 

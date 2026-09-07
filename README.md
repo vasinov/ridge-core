@@ -15,7 +15,7 @@ in model context.
 ## Install
 
 The distribution is named `ridge-core`; the Python package and command remain
-`ridge`. Install from a source checkout with Python 3.11 or newer:
+`ridge`. Install from a source checkout with Python 3.11 or newer on a POSIX host:
 
 ```bash
 python3 -m venv .venv
