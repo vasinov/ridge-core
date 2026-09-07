@@ -21,7 +21,7 @@ default_tools_approval_mode = "writes"
 
 The server provides explicit tools for discovery, inspection, execution,
 data operations (`list_data`, `read_data`, `write_data`, `stat_data`), copy,
-and job lifecycle. `list_resources` returns
+job lifecycle, and resource coordination. `list_resources` returns
 concise capability summaries; call `inspect_resource` only for backend
 properties. Both results distinguish operations supported by a resource from
 operations allowed by the configured Ridge policy. They also report canonical
@@ -60,6 +60,17 @@ finite value when the attempt must be bounded.
 Because MCP inline reads first determine whether content fits in model context,
 `read_data` requires both `data.stat` and `data.read`. CLI reads do not
 perform that preliminary metadata operation.
+
+Resource operations automatically acquire claims. To reserve resources across
+calls, `acquire_locks` accepts `scopes: [{resource, operation}, ...]`, optional
+`lease_seconds` (default 300), and `wait_seconds` (default 0). Pass the returned
+`token` as `lock_token` on execution, data, and copy calls; session reads must
+declare both `data.stat` and `data.read`. Use `renew_locks` and `release_locks`
+with `token`. `inspect_lock(identity)` and `list_locks(cursor, limit)` expose
+authorized metadata without ownership tokens. `force_release_lock(identity,
+reason)` is only for uncertain operations and never cancels them. Sessions survive
+MCP disconnection and can also be used from the CLI. See
+[coordination and recovery](guides/coordination.md).
 
 MCP annotations describe likely side effects. They are host hints, not Ridge
 authorization. MCP operations are authorized by the same application service as

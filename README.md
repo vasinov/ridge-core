@@ -6,6 +6,11 @@ CLI or local MCP server. Agents use resource names instead of backend-specific
 transfer commands. Copies stream through Ridge without putting file contents
 in model context.
 
+Multiple agents can share resources through coordinated access: ordinary CLI and
+MCP operations acquire resource claims automatically, and explicit sessions reserve
+several resources across calls. Callers must share local Ridge state and matching
+resource lock keys. See [coordination and crash recovery](docs/guides/coordination.md).
+
 > [!WARNING]
 > Ridge is public-alpha software for controlled, single-user environments. It
 > inherits the operating-system authority and ambient credentials of its

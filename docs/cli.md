@@ -16,9 +16,22 @@ ridge jobs list
 ridge jobs inspect JOB_ID
 ridge jobs logs JOB_ID [--stream stdout|stderr] [--offset N]
 ridge jobs cancel JOB_ID
+ridge locks acquire RESOURCE:OPERATION... [--lease-seconds N] [--wait-seconds N]
+ridge --lock-token TOKEN locks renew
+ridge --lock-token TOKEN locks release
+ridge locks list [--limit N] [--cursor TOKEN]
+ridge locks inspect ID
+ridge locks force-release OPERATION_ID --reason TEXT
 ```
 
 Use `ridge COMMAND --help` for frontend options and output details.
+
+Configured resource operations automatically claim their resources and exit 2 on
+contention. `locks acquire` returns JSON including a session `id` and secret `token`.
+Put the global `--lock-token TOKEN` before the operation command, or set
+`RIDGE_LOCK_TOKEN`, to use that reservation across CLI invocations. The token is
+also required for renewal and release. Inspection/listing never return tokens.
+See [coordination](guides/coordination.md) for release, expiry, and uncertain work.
 `ridge resources` and `ridge inspect` show both supported and policy-allowed
 operations. An authorization denial is an expected Ridge error and exits with
 status 2 before the target capability is invoked.

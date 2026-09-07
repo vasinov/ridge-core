@@ -11,6 +11,7 @@ import typer
 
 from ridge.application import RidgeService
 from ridge.errors import ExecutionTimeoutError, RidgeError
+from ridge.model import JobScope, Operation
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -19,6 +20,8 @@ app = typer.Typer(
 )
 jobs_app = typer.Typer(no_args_is_help=True, help="Observe and cancel durable background jobs.")
 app.add_typer(jobs_app, name="jobs")
+locks_app = typer.Typer(no_args_is_help=True, help="Coordinate resource access across callers.")
+app.add_typer(locks_app, name="locks")
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -27,6 +30,7 @@ _R = TypeVar("_R")
 @dataclass(frozen=True, slots=True)
 class _AppState:
     config: Path
+    lock_token: str | None = None
 
 
 def _handle_errors(function: Callable[_P, _R]) -> Callable[_P, _R]:
@@ -55,14 +59,89 @@ def configure(
             help="Resource configuration.",
         ),
     ] = Path("ridge.yaml"),
+    lock_token: Annotated[
+        str | None,
+        typer.Option(
+            "--lock-token",
+            envvar="RIDGE_LOCK_TOKEN",
+            help="Explicit session token for resource operations.",
+        ),
+    ] = None,
 ) -> None:
     """Configure the Ridge command invocation."""
-    ctx.obj = _AppState(config=config)
+    ctx.obj = _AppState(config=config, lock_token=lock_token)
 
 
 def _service(ctx: typer.Context) -> RidgeService:
     state = cast(_AppState, ctx.obj)
-    return RidgeService.from_config(state.config)
+    return RidgeService.from_config(state.config).with_lock(state.lock_token)
+
+
+@locks_app.command("acquire")
+@_handle_errors
+def locks_acquire(
+    ctx: typer.Context,
+    scopes: Annotated[list[str], typer.Argument(help="RESOURCE:OPERATION pairs.")],
+    lease_seconds: float = 300,
+    wait_seconds: float = 0,
+) -> None:
+    declared: list[JobScope] = []
+    for value in scopes:
+        resource, separator, operation = value.partition(":")
+        if not separator:
+            raise ValueError("scope must be RESOURCE:OPERATION")
+        declared.append(JobScope(resource, Operation(operation)))
+    typer.echo(
+        json.dumps(
+            _service(ctx).acquire_locks(
+                declared, lease_seconds=lease_seconds, wait_seconds=wait_seconds
+            )
+        )
+    )
+
+
+def _token(ctx: typer.Context) -> str:
+    token = cast(_AppState, ctx.obj).lock_token
+    if token is None:
+        raise ValueError("provide --lock-token or RIDGE_LOCK_TOKEN")
+    return token
+
+
+@locks_app.command("renew")
+@_handle_errors
+def locks_renew(ctx: typer.Context) -> None:
+    typer.echo(json.dumps(_service(ctx).renew_locks(_token(ctx))))
+
+
+@locks_app.command("release")
+@_handle_errors
+def locks_release(ctx: typer.Context) -> None:
+    typer.echo(json.dumps(_service(ctx).release_locks(_token(ctx))))
+
+
+@locks_app.command("inspect")
+@_handle_errors
+def locks_inspect(ctx: typer.Context, identity: str) -> None:
+    typer.echo(json.dumps(_service(ctx).inspect_lock(identity)))
+
+
+@locks_app.command("list")
+@_handle_errors
+def locks_list(ctx: typer.Context, cursor: str | None = None, limit: int = 100) -> None:
+    typer.echo(json.dumps(_service(ctx).list_locks(cursor=cursor, limit=limit)))
+
+
+@locks_app.command("force-release")
+@_handle_errors
+def locks_force_release(
+    ctx: typer.Context,
+    identity: str,
+    reason: Annotated[
+        str,
+        typer.Option(help="Why it is acceptable to release uncertain work; does not cancel it."),
+    ],
+) -> None:
+    typer.echo(json.dumps(_service(ctx).force_release_lock(identity, reason=reason)))
 
 
 def _write_content(text: str | None, source_path: Path | None) -> bytes:

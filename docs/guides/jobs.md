@@ -14,7 +14,7 @@ done
 
 Jobs start immediately and receive one attempt. Ridge does not provide queues,
 priorities, dependencies, schedules, retries, or worker routing. SQLite stores
-metadata and results under `jobs.directory`; per-job files store logs. Direct
+metadata and results under `state.directory`; per-job files store logs. Direct
 write content is staged before submission returns; terminal cleanup attempts to
 remove it. Copy sources are opened only when execution begins.
 
@@ -96,7 +96,7 @@ Unlike data listings and log reads, its response grows with history.
 ## Retention and sensitive data
 
 Metadata, results, idempotency keys, and stdout/stderr logs are retained
-indefinitely under `jobs.directory` (default `.ridge/jobs` beside the config).
+indefinitely under `state.directory` (default `.ridge` beside the config).
 There is no automatic expiration, pruning, or deletion command. Staged write
 payloads are removed after verified shutdown or a fenced, unstarted attempt.
 Cleanup errors appear in the job's `error` field without replacing its operation
@@ -124,4 +124,4 @@ Writes have kind `write` and a `data.write` scope for either addressing model.
 Copy records source `data.read` and destination `data.write`. Job formats are
 active-development contracts without migrations. To retain an earlier
 development version's job data, leave its directory intact and select a new
-`jobs.directory` for the current version.
+`state.directory` for the current version.

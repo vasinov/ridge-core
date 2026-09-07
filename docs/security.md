@@ -40,8 +40,16 @@ execution and are not contained by the resource path boundary.
 Ridge does not manage provider credentials, but this does not mean it cannot
 store secrets. Job arguments, staged write content, output, and errors may
 contain sensitive data. Metadata and logs have no automatic expiration. Ignore
-`.ridge/` (and any custom job directory) in your own repository and review
+`.ridge/` (and any custom state directory) in your own repository and review
 artifacts before publishing. See [retention](guides/jobs.md#retention-and-sensitive-data).
+
+Coordination sessions and operations share the jobs database. Session tokens are
+returned to callers and stored as hashes; protect the returned token and any shell
+environment containing it. A token proves cooperative ownership, not authorization.
+Calls still require current grants. Coordination covers participating Ridge calls
+with declared resource scopes; different state directories, unrecognized aliases,
+arbitrary compute access, and external tools can bypass it. Force-release records
+an operator reason and does not terminate work. See [coordination](guides/coordination.md).
 
 Job cancellation verifies shutdown only of the owned local worker group. It is
 not a containment boundary, rollback, or proof of remote/detached-process termination.

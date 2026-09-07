@@ -73,7 +73,7 @@ docker rm -f ridge-csv-demo
 ```
 
 This deletes its writable layer, including worker files. Reports remain local;
-job metadata and logs remain under `.ridge/jobs`. Do not use this cleanup on an
+job metadata and logs remain under `.ridge`. Do not use this cleanup on an
 existing shared container. See [retention and cancellation limits](../guides/jobs.md).
 
 ## What this looks like without Ridge

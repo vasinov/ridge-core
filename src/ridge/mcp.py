@@ -20,9 +20,11 @@ from ridge.model import (
     FileStat,
     Job,
     JobLog,
+    JobScope,
     ListEntry,
     ObjectEntry,
     ObjectStat,
+    Operation,
     PropertyScalar,
     ResourceInspection,
 )
@@ -143,6 +145,28 @@ class ExecuteResult(_WireModel):
 class JobScopeResult(_WireModel):
     resource: str
     operation: str
+
+
+class LockResult(_WireModel):
+    id: str
+    kind: Literal["session", "operation"]
+    status: Literal["open", "closing", "active", "uncertain", "released"]
+    scopes: list[JobScopeResult]
+    claims: dict[str, Literal["shared", "exclusive"]]
+    expires_at: float | None = None
+    lease_seconds: float | None = None
+    session_id: str | None = None
+    job_id: str | None = None
+    reason: str | None = None
+
+
+class LockAcquisitionResult(LockResult):
+    token: str
+
+
+class LocksResult(_WireModel):
+    entries: list[LockResult]
+    next_cursor: str | None
 
 
 class JobResult(_WireModel):
@@ -387,7 +411,10 @@ def create_server(service: RidgeService) -> MCPServer[None]:
             "Use copy for large or binary content. Pass commands as an argv array, never as a shell "
             "command string. Set background=true when duration is uncertain, incremental logs or "
             "cancellation matter, or a synchronous tool timeout is likely. Do not retry a submission "
-            "without an idempotency_key."
+            "without an idempotency_key. Ordinary operations acquire resource claims automatically. "
+            "Use acquire_locks to reserve resources across calls, pass lock_token on each operation, "
+            "and renew before lease expiry. Inspect outstanding claims after conflicts; uncertain "
+            "work may still be running. Release sessions when finished."
         ),
     )
 
@@ -415,6 +442,7 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         timeout_seconds: float | None = None,
         background: bool = False,
         idempotency_key: str | None = None,
+        lock_token: str | None = None,
     ) -> ExecuteOperationResult:
         """Execute argv on a compute resource with bounded model-facing output."""
         if background:
@@ -422,7 +450,7 @@ def create_server(service: RidgeService) -> MCPServer[None]:
                 mode="submitted",
                 result=None,
                 job=_job_result(
-                    service.submit_execution(
+                    service.with_lock(lock_token).submit_execution(
                         resource,
                         argv,
                         cwd=cwd,
@@ -434,7 +462,7 @@ def create_server(service: RidgeService) -> MCPServer[None]:
             )
         if idempotency_key is not None:
             raise ToolError("idempotency_key requires background=true")
-        result = service.execute(
+        result = service.with_lock(lock_token).execute(
             resource,
             argv,
             cwd=cwd,
@@ -460,11 +488,12 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         path: str | None = None,
         cursor: str | None = None,
         limit: int = _DEFAULT_LIST_LIMIT,
+        lock_token: str | None = None,
     ) -> DataListResult:
         """List directory children or exact object-prefix matches; inspect addressing first."""
         if not 1 <= limit <= _MAX_LIST_LIMIT:
             raise ToolError(f"limit must be between 1 and {_MAX_LIST_LIMIT}")
-        page = service.list_data(resource, path, cursor=cursor, limit=limit)
+        page = service.with_lock(lock_token).list_data(resource, path, cursor=cursor, limit=limit)
         return DataListResult(
             addressing=page.addressing,
             entries=[
@@ -478,12 +507,14 @@ def create_server(service: RidgeService) -> MCPServer[None]:
 
     @server.tool(annotations=_READ_ONLY, structured_output=True)
     @_tool_errors
-    def read_data(resource: str, path: str) -> ContentResult:
+    def read_data(resource: str, path: str, lock_token: str | None = None) -> ContentResult:
         """Stat then read a small UTF-8 file/object; requires data.stat and data.read."""
-        stat = service.stat_data(resource, path)
+        stat = service.with_lock(lock_token).stat_data(resource, path)
         if stat.size > _INLINE_CONTENT_BYTES:
             return _too_large_result(stat.size)
-        return _read_result(service.read_data(resource, path, max_bytes=_INLINE_CONTENT_BYTES))
+        return _read_result(
+            service.with_lock(lock_token).read_data(resource, path, max_bytes=_INLINE_CONTENT_BYTES)
+        )
 
     @server.tool(annotations=_WRITE, structured_output=True)
     @_tool_errors
@@ -494,6 +525,7 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         encoding: Literal["utf-8", "base64"] = "utf-8",
         background: bool = False,
         idempotency_key: str | None = None,
+        lock_token: str | None = None,
     ) -> WriteOperationResult:
         """Create or replace a file/object from buffered UTF-8 text or base64 bytes."""
         decoded = _decode_content(content, encoding)
@@ -502,12 +534,14 @@ def create_server(service: RidgeService) -> MCPServer[None]:
                 mode="submitted",
                 result=None,
                 job=_job_result(
-                    service.submit_write(resource, path, decoded, idempotency_key=idempotency_key)
+                    service.with_lock(lock_token).submit_write(
+                        resource, path, decoded, idempotency_key=idempotency_key
+                    )
                 ),
             )
         if idempotency_key is not None:
             raise ToolError("idempotency_key requires background=true")
-        service.write_data(resource, path, decoded)
+        service.with_lock(lock_token).write_data(resource, path, decoded)
         return WriteOperationResult(
             mode="completed",
             result=WriteResult(bytes_written=len(decoded)),
@@ -516,9 +550,9 @@ def create_server(service: RidgeService) -> MCPServer[None]:
 
     @server.tool(annotations=_READ_ONLY, structured_output=True)
     @_tool_errors
-    def stat_data(resource: str, path: str) -> DataStatResult:
+    def stat_data(resource: str, path: str, lock_token: str | None = None) -> DataStatResult:
         """Inspect a resource-relative filesystem path or exact object key."""
-        stat = service.stat_data(resource, path)
+        stat = service.with_lock(lock_token).stat_data(resource, path)
         return DataStatResult(
             addressing="filesystem" if isinstance(stat, FileStat) else "object",
             metadata=_file_stat_result(stat)
@@ -533,6 +567,7 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         destination: str,
         background: bool = False,
         idempotency_key: str | None = None,
+        lock_token: str | None = None,
     ) -> CopyOperationResult:
         """Copy a file or directory tree between exact RESOURCE:PATH locations."""
         if background:
@@ -540,14 +575,16 @@ def create_server(service: RidgeService) -> MCPServer[None]:
                 mode="submitted",
                 result=None,
                 job=_job_result(
-                    service.submit_copy(source, destination, idempotency_key=idempotency_key)
+                    service.with_lock(lock_token).submit_copy(
+                        source, destination, idempotency_key=idempotency_key
+                    )
                 ),
             )
         if idempotency_key is not None:
             raise ToolError("idempotency_key requires background=true")
         return CopyOperationResult(
             mode="completed",
-            result=_copy_result(service.copy(source, destination)),
+            result=_copy_result(service.with_lock(lock_token).copy(source, destination)),
             job=None,
         )
 
@@ -580,7 +617,57 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         """Request cancellation of a running job and return its observed state."""
         return _job_result(service.cancel_job(job_id))
 
+    @server.tool(annotations=_EXECUTE, structured_output=True)
+    @_tool_errors
+    def acquire_locks(
+        scopes: list[JobScopeResult], lease_seconds: float = 300, wait_seconds: float = 0
+    ) -> LockAcquisitionResult:
+        """Reserve all declared resource/operation pairs; return a secret session token."""
+        return LockAcquisitionResult.model_validate(
+            service.acquire_locks(
+                [JobScope(s.resource, Operation(s.operation)) for s in scopes],
+                lease_seconds=lease_seconds,
+                wait_seconds=wait_seconds,
+            )
+        )
+
+    @server.tool(annotations=_EXECUTE, structured_output=True)
+    @_tool_errors
+    def renew_locks(token: str) -> LockResult:
+        """Renew an open idle-session lease; expired tokens cannot be revived."""
+        return LockResult.model_validate(service.renew_locks(token))
+
+    @server.tool(annotations=_WRITE, structured_output=True)
+    @_tool_errors
+    def release_locks(token: str) -> LockResult:
+        """Close session admission; retain reservations while operations remain active."""
+        return LockResult.model_validate(service.release_locks(token))
+
+    @server.tool(annotations=_READ_ONLY, structured_output=True)
+    @_tool_errors
+    def inspect_lock(identity: str) -> LockResult:
+        """Inspect a session or operation without exposing its ownership token."""
+        return LockResult.model_validate(service.inspect_lock(identity))
+
+    @server.tool(annotations=_READ_ONLY, structured_output=True)
+    @_tool_errors
+    def list_locks(cursor: str | None = None, limit: int = 100) -> LocksResult:
+        """List a bounded page of authorized outstanding sessions and operations."""
+        return LocksResult.model_validate(service.list_locks(cursor=cursor, limit=limit))
+
+    @server.tool(annotations=_WRITE, structured_output=True)
+    @_tool_errors
+    def force_release_lock(identity: str, reason: str) -> LockResult:
+        """Release uncertain operation claims after external inspection; does not cancel work."""
+        return LockResult.model_validate(service.force_release_lock(identity, reason=reason))
+
     _registered_tools = (
+        acquire_locks,
+        renew_locks,
+        release_locks,
+        inspect_lock,
+        list_locks,
+        force_release_lock,
         list_resources,
         inspect_resource,
         execute,

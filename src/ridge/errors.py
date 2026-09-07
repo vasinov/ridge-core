@@ -79,3 +79,11 @@ class JobNotFoundError(RidgeError):
 
 class JobConflictError(RidgeError):
     """A durable job request conflicts with existing state."""
+
+
+class LockConflictError(RidgeError):
+    """Resource ownership conflicts with another session or operation."""
+
+
+class LockOwnershipError(RidgeError):
+    """A coordination token, scope, or recovery request is invalid."""

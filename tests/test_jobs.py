@@ -28,7 +28,7 @@ from ridge.registry import ResourceRegistry
 def _config(tmp_path: Path) -> Path:
     config = tmp_path / "ridge.yaml"
     config.write_text(
-        "resources: {local: {provider: local, root: .}}\njobs: {directory: job-state}\n"
+        "resources: {local: {provider: local, root: .}}\nstate: {directory: job-state}\n"
     )
     return config
 
@@ -190,11 +190,11 @@ def test_job_listing_is_filtered_by_current_underlying_grants(tmp_path: Path) ->
     loaded = load_configuration(tmp_path / "ridge.yaml")
     assert loaded.path is not None
     assert loaded.fingerprint is not None
-    assert loaded.jobs_directory is not None
+    assert loaded.state_directory is not None
     hidden = RidgeService(
         loaded.registry,
         AuthorizationPolicy.exact({"local": frozenset()}),
-        JobManager(loaded.jobs_directory, loaded.path, loaded.fingerprint),
+        JobManager(loaded.state_directory, loaded.path, loaded.fingerprint),
     )
 
     assert hidden.list_jobs() == ()
@@ -384,6 +384,7 @@ def test_interrupted_payload_staging_rolls_back_and_removes_new_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager, job_id = _unstarted(tmp_path, monkeypatch)
+    manager.finish(job_id, JobStatus.CANCELLED)
     before = set(manager.directory.iterdir())
     with monkeypatch.context() as patch:
         patch.setattr(Path, "open", Mock(side_effect=KeyboardInterrupt("interrupted staging")))

@@ -239,6 +239,11 @@ containment.
 
 ## Durable jobs
 
+Jobs and resource coordination share one authoritative SQLite database,
+`state.sqlite3` under `state.directory` (default `.ridge` beside the configuration).
+Job artifacts occupy per-job directories beside it. No older development state
+is migrated or deleted automatically.
+
 Ridge supports immediate, durable background execution without becoming
 a scheduler. `compute.exec`, `data.write`, and cross-resource
 copy may be submitted in the background. Submission is an option on the
@@ -248,7 +253,7 @@ automatic retries, or broker semantics.
 
 SQLite is authoritative for job identity, request metadata, state transitions,
 idempotency keys, and results. Per-job files hold stdout, stderr, and transient
-staged write payloads. The configured job directory is relative to the Ridge
+staged write payloads. The configured state directory is relative to the Ridge
 configuration by default. Metadata and logs have no automatic retention;
 terminal-attempt cleanup attempts to remove staged write payloads. Crashes or
 filesystem failures can leave payloads behind.
@@ -316,3 +321,36 @@ submission as an application workflow, with source-read and destination-write
 job scopes. A background read operation is not provided.
 Foreground and background execution have the same timeout semantics and no
 timeout by default.
+
+## Resource coordination
+
+The application owns authorization and admission; `coordination` owns persistent
+sessions, resource claims, operation registration, lease reconciliation, and
+recovery evidence. Providers do not acquire remote locks. Every configured CLI/MCP
+data/compute/copy workflow participates; direct backend use and services without
+configured state remain outside coordination.
+
+Lock identity is the shared state directory plus a resource's `lock_key`, defaulting
+to its name. Aliases and overlapping resources must explicitly share keys. Resource
+operations determine shared/exclusive modes; authorization remains operation-specific
+and is checked before admission and again on each call. A session reserves all
+declared pairs atomically, without upgrades. Its token does not confer permissions.
+
+Operations are registered before dispatch, including within explicit sessions.
+Conflicting operations in the same session cannot overlap. Session closure stops
+admission but retains the complete reservation while registered work remains.
+Idle leases expire on subsequent observations; expired ownership cannot resume.
+Foreground ownership uses a local advisory file only as evidence of a live process;
+loss marks durable claims uncertain, never automatically stopped. Known synchronous
+local data failures release claims; interrupted execution and remote failures are
+conservative uncertainty. Ownership files are not deleted during normal release.
+
+Job insertion and claim admission share one transaction, including idempotency
+lookup. A worker validates its existing claim and never reacquires an expired
+session. Claims release with fenced unstarted attempts, acknowledged success after
+local group shutdown, or verified local-only termination. Remote cancellation and
+lost supervisors retain uncertainty. Force-release is explicit, authorized, limited
+to uncertain operations, and records a reason without signalling processes.
+
+See [Resource coordination](guides/coordination.md) for the complete caller contract,
+lease bounds, bounded discovery, and external-access limitations.

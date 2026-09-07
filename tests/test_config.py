@@ -70,17 +70,17 @@ permissions:
     assert not denied.authorization.allows("data", Operation.DATA_READ)
 
 
-def test_jobs_directory_is_relative_to_configuration(tmp_path: Path) -> None:
+def test_state_directory_is_relative_to_configuration(tmp_path: Path) -> None:
     config = tmp_path / "ridge.yaml"
     config.write_text(
-        "resources: {data: {provider: local, root: .}}\njobs: {directory: state/jobs}\n"
+        "resources: {data: {provider: local, root: .}}\nstate: {directory: state/jobs}\n"
     )
 
     loaded = load_configuration(config)
 
     assert loaded.path == config.resolve()
     assert loaded.fingerprint is not None
-    assert loaded.jobs_directory == (tmp_path / "state" / "jobs").resolve()
+    assert loaded.state_directory == (tmp_path / "state" / "jobs").resolve()
 
 
 @pytest.mark.parametrize(

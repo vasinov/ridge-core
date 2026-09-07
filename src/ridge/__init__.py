@@ -3,7 +3,7 @@
 from ridge.application import RidgeService
 from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Authorizer
 from ridge.config import LoadedConfiguration, load_configuration, load_registry
-from ridge.errors import AuthorizationDeniedError, RidgeError
+from ridge.errors import AuthorizationDeniedError, LockConflictError, LockOwnershipError, RidgeError
 from ridge.model import Job, JobKind, JobLog, JobScope, JobStatus, Operation, ResourceLocation
 from ridge.provider import ProviderContext, ResourceProvider, ResourceProviderRegistry
 from ridge.registry import ResourceRegistry
@@ -32,6 +32,8 @@ __all__ = [
     "JobScope",
     "JobStatus",
     "LoadedConfiguration",
+    "LockConflictError",
+    "LockOwnershipError",
     "Operation",
     "ProviderContext",
     "Resource",

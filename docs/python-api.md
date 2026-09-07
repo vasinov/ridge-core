@@ -26,6 +26,13 @@ Use `RidgeService.from_config()` when permissions in the YAML document must be
 applied. `load_registry()` intentionally loads only resource inventory;
 constructing a service directly from that registry selects unrestricted mode.
 
+`from_config()` also enables shared durable coordination. A directly constructed
+service without a job manager has no coordination store. For multi-call work,
+use `acquire_locks([JobScope(resource, Operation.DATA_WRITE), ...])` and pass the
+returned token to `with_lock(token)`. That returns a separate service view, so
+concurrent callers do not mutate one another's session selection. Close ownership
+with `release_locks(token)`; see [session semantics](guides/coordination.md).
+
 ## Application service
 
 ::: ridge.application.RidgeService

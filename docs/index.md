@@ -13,6 +13,7 @@ Ridge currently supports:
 - streamed file and directory copy between compatible resources;
 - optional exact, default-deny operation grants;
 - durable immediate background jobs for execution, writes, and copy;
+- coordinated access across agents, including multi-resource sessions;
 - separately installed resource providers.
 
 !!! warning "Public alpha"
@@ -29,6 +30,11 @@ construct Docker, SSH, or cloud-provider commands. Ridge keeps operation
 semantics consistent, rejects filesystem escapes, bounds data/execution output,
 and streams cross-resource transfers without placing complete files in model
 context.
+
+Agents sharing mutable resources can reserve them across calls, while ordinary
+CLI/MCP operations automatically participate in the same coordination rules.
+Shared local state and matching resource keys define the boundary; see
+[resource coordination](guides/coordination.md) for contention and crash recovery.
 
 Named-resource copy avoids spending model tokens generating, writing, debugging,
 and explaining backend-specific transfer glue. Copy relays payloads with bounded

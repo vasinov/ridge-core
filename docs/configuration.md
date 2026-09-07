@@ -7,6 +7,7 @@ resources:
   source:
     provider: local
     root: ./input
+    lock_key: source-files
 
   build:
     provider: docker
@@ -40,8 +41,8 @@ permissions:
     - data.stat
     - data.write
 
-jobs:
-  directory: .ridge/jobs
+state:
+  directory: .ridge
 ```
 
 The default path is `./ridge.yaml`. `--config PATH` takes precedence over the
@@ -57,12 +58,18 @@ Boto3's ambient credential chain, SSH uses OpenSSH configuration and agents, and
 inherit the Ridge process environment unless a request explicitly supplies
 environment values.
 
-The optional `jobs.directory` selects durable SQLite state, logs, and transient
+The optional `state.directory` selects durable SQLite state, logs, and transient
 staged payloads. A relative value is resolved from the configuration file. The
-default is `.ridge/jobs` beside that file. Background execution rejects
+default is `.ridge` beside that file. Background execution rejects
 explicit environment values so Ridge does not persist them.
 Arguments, logs, results, and staged content may still contain secrets supplied
 by callers or commands. See [job retention](guides/jobs.md#retention-and-sensitive-data).
+
+All configured operations participate in resource coordination. An optional
+resource `lock_key` defaults to its resource name and uses the same character set,
+with a maximum of 128 characters. Give overlapping resources the same key. Different
+inventories coordinate only when they share both the state directory and matching
+keys. Read [Resource coordination](guides/coordination.md) for sessions and recovery.
 
 ## Permissions
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
@@ -26,7 +26,8 @@ class LoadedConfiguration:
     authorization: AuthorizationPolicy
     path: Path | None = None
     fingerprint: str | None = None
-    jobs_directory: Path | None = None
+    state_directory: Path | None = None
+    lock_keys: dict[str, str] = field(default_factory=lambda: dict[str, str]())
 
 
 def _mapping(value: object, label: str) -> Mapping[str, object]:
@@ -61,7 +62,7 @@ def load_configuration(
         raise ConfigurationError(f"cannot read configuration {path}: {exc}") from exc
 
     document = _mapping(raw_document, "configuration")
-    unknown_document_keys = set(document) - {"resources", "permissions", "jobs"}
+    unknown_document_keys = set(document) - {"resources", "permissions", "state"}
     if unknown_document_keys:
         joined = ", ".join(sorted(unknown_document_keys))
         raise ConfigurationError(f"unknown configuration keys: {joined}")
@@ -69,6 +70,7 @@ def load_configuration(
     provider_registry = providers or default_provider_registry()
     context = ProviderContext(config_path=path)
     resources: list[Resource] = []
+    lock_keys: dict[str, str] = {}
 
     for name, raw_config in resource_configs.items():
         if not _RESOURCE_NAME.fullmatch(name):
@@ -77,7 +79,17 @@ def load_configuration(
         provider_name = config.get("provider")
         if not isinstance(provider_name, str):
             raise ConfigurationError(f"resource {name!r} requires a string provider")
-        provider_config = {key: value for key, value in config.items() if key != "provider"}
+        lock_key = config.get("lock_key", name)
+        if (
+            not isinstance(lock_key, str)
+            or not _RESOURCE_NAME.fullmatch(lock_key)
+            or len(lock_key) > 128
+        ):
+            raise ConfigurationError(f"invalid lock_key for resource {name!r}")
+        lock_keys[name] = lock_key
+        provider_config = {
+            key: value for key, value in config.items() if key not in {"provider", "lock_key"}
+        }
         try:
             resources.append(
                 provider_registry.create(provider_name, name, provider_config, context)
@@ -96,27 +108,28 @@ def load_configuration(
         authorization = AuthorizationPolicy.unrestricted()
     else:
         authorization = _load_permissions(document["permissions"], registry)
-    jobs_directory = _load_jobs(document.get("jobs"), path)
+    state_directory = _load_state(document.get("state"), path)
     return LoadedConfiguration(
         registry,
         authorization,
         path,
         sha256(raw_bytes).hexdigest(),
-        jobs_directory,
+        state_directory,
+        lock_keys,
     )
 
 
-def _load_jobs(value: object, config_path: Path) -> Path:
+def _load_state(value: object, config_path: Path) -> Path:
     if value is None:
-        return config_path.parent / ".ridge" / "jobs"
-    config = _mapping(value, "jobs")
+        return config_path.parent / ".ridge"
+    config = _mapping(value, "state")
     unknown = set(config) - {"directory"}
     if unknown:
         joined = ", ".join(sorted(unknown))
-        raise ConfigurationError(f"unknown jobs keys: {joined}")
-    raw_directory = config.get("directory", ".ridge/jobs")
+        raise ConfigurationError(f"unknown state keys: {joined}")
+    raw_directory = config.get("directory", ".ridge")
     if not isinstance(raw_directory, str) or not raw_directory:
-        raise ConfigurationError("jobs directory must be a non-empty string")
+        raise ConfigurationError("state directory must be a non-empty string")
     directory = Path(raw_directory).expanduser()
     if not directory.is_absolute():
         directory = config_path.parent / directory

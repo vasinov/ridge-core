@@ -50,6 +50,7 @@ nav:
       - SSH: resources/ssh.md
       - S3: resources/s3.md
   - Guides:
+      - Resource coordination: guides/coordination.md
       - Copying between resources: guides/copying.md
       - Background jobs: guides/jobs.md
   - Concepts:

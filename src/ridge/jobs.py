@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal, cast
 
+from ridge.coordination import Coordination
 from ridge.errors import JobConflictError, JobNotFoundError, RidgeError
 from ridge.model import Job, JobKind, JobLog, JobScope, JobStatus, Operation
 
@@ -46,11 +47,19 @@ def _json(value: object) -> str:
 class JobManager:
     """SQLite job metadata plus per-job payload and log files."""
 
-    def __init__(self, directory: Path, config_path: Path, config_fingerprint: str) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        config_path: Path,
+        config_fingerprint: str,
+        *,
+        lock_keys: Mapping[str, str] | None = None,
+    ) -> None:
         self.directory = directory
         self.config_path = config_path
         self.config_fingerprint = config_fingerprint
-        self.database = directory / "jobs.sqlite3"
+        self.database = directory / "state.sqlite3"
+        self.coordination = Coordination(directory, lock_keys)
 
     def submit(
         self,
@@ -60,6 +69,8 @@ class JobManager:
         *,
         payload: bytes | None = None,
         idempotency_key: str | None = None,
+        lock_token: str | None = None,
+        local_only: bool = False,
     ) -> Job:
         if idempotency_key == "":
             raise ValueError("idempotency_key must be non-empty or None")
@@ -76,6 +87,10 @@ class JobManager:
                     "request": json.loads(request_json),
                     "payload_sha256": payload_digest,
                     "config_fingerprint": self.config_fingerprint,
+                    "config_path": str(self.config_path),
+                    "lock_token_hash": hashlib.sha256(lock_token.encode()).hexdigest()
+                    if lock_token
+                    else None,
                 }
             ).encode()
         ).hexdigest()
@@ -98,6 +113,9 @@ class JobManager:
                     return self.get(existing_id)
 
             job_id = str(uuid.uuid4())
+            self.coordination.admit(
+                connection, job_id, scopes, token=lock_token, local_only=local_only, job_id=job_id
+            )
             job_directory = self.directory / job_id
             job_directory.mkdir(mode=0o700)
             payload_path: str | None = None
@@ -228,10 +246,7 @@ class JobManager:
             time.sleep(_POLL_SECONDS)
 
     def connect(self) -> sqlite3.Connection:
-        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        connection = sqlite3.connect(self.database, timeout=10)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode = WAL")
+        connection = self.coordination.connect()
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS jobs (
@@ -256,6 +271,17 @@ class JobManager:
             """
         )
         return connection
+
+    def reconcile_claims(self) -> None:
+        connection = self.connect()
+        try:
+            identities = connection.execute(
+                "SELECT job_id FROM lock_operations WHERE job_id IS NOT NULL AND status = 'active'"
+            ).fetchall()
+        finally:
+            connection.close()
+        for row in identities:
+            self.get(row["job_id"])
 
     def finish(
         self,
@@ -294,6 +320,21 @@ class JobManager:
                     job_id,
                 ),
             )
+            claim = connection.execute(
+                "SELECT * FROM lock_operations WHERE id = ?", (job_id,)
+            ).fetchone()
+            if claim is not None:
+                safe = row["started_at"] is None or (
+                    cleanup and (bool(claim["local_only"]) or status is JobStatus.SUCCEEDED)
+                )
+                self.coordination.finish(
+                    connection,
+                    job_id,
+                    safe=safe,
+                    reason=None
+                    if safe
+                    else "job ended without verified resource execution termination",
+                )
             connection.commit()
         finally:
             connection.close()
@@ -361,7 +402,7 @@ class _Cancelled(Exception):
 
 
 def _load_manager(directory: Path, job_id: str) -> tuple[JobManager, sqlite3.Row]:
-    database = directory / "jobs.sqlite3"
+    database = directory / "state.sqlite3"
     connection = sqlite3.connect(database, timeout=10)
     connection.row_factory = sqlite3.Row
     try:
@@ -384,9 +425,10 @@ def _work(directory: Path, job_id: str, gate: int) -> int:
     with os.fdopen(gate, "rb") as handoff:
         if handoff.read(1) != b"1":
             return 2
-    from ridge._job_process import in_job_worker
+    from ridge._job_process import current_job, in_job_worker
 
     in_job_worker.set(True)
+    current_job.set(job_id)
     manager, row = _load_manager(directory, job_id)
 
     def cancelled(_signum: int, _frame: object) -> None:

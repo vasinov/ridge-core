@@ -80,6 +80,12 @@ async def test_server_declares_explicit_tools_and_annotations(tmp_path: Path) ->
 
     tools = {tool.name: tool for tool in listing.tools}
     assert set(tools) == {
+        "acquire_locks",
+        "renew_locks",
+        "release_locks",
+        "inspect_lock",
+        "list_locks",
+        "force_release_lock",
         "copy",
         "cancel_job",
         "execute",
@@ -111,6 +117,37 @@ async def test_server_declares_explicit_tools_and_annotations(tmp_path: Path) ->
         "background_operations",
     }
     assert local["background_operations"] == []
+
+
+@pytest.mark.anyio
+async def test_mcp_lock_tokens_and_declared_result_schemas(tmp_path: Path) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text("resources: {local: {provider: local, root: .}}")
+    service = RidgeService.from_config(config)
+    async with Client(create_server(service)) as client:
+        acquired = _structured(
+            await client.call_tool(
+                "acquire_locks", {"scopes": [{"resource": "local", "operation": "data.write"}]}
+            )
+        )
+        token = acquired["token"]
+        blocked = await client.call_tool(
+            "write_data", {"resource": "local", "path": "blocked", "content": "no"}
+        )
+        assert blocked.is_error
+        owned = await client.call_tool(
+            "write_data",
+            {"resource": "local", "path": "owned", "content": "yes", "lock_token": token},
+        )
+        assert not owned.is_error
+        info = _structured(await client.call_tool("inspect_lock", {"identity": acquired["id"]}))
+        assert "token" not in info and info["status"] == "open"
+        page = _structured(await client.call_tool("list_locks", {"limit": 1}))
+        assert len(cast(list[object], page["entries"])) == 1
+        released = _structured(await client.call_tool("release_locks", {"token": token}))
+        assert released["status"] == "released"
+    assert (tmp_path / "owned").read_text() == "yes"
+    assert not (tmp_path / "blocked").exists()
 
 
 @pytest.mark.anyio
