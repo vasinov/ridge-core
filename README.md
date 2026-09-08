@@ -18,7 +18,7 @@ With Ridge connected to an MCP-capable agent, a task like this becomes a short
 sequence of tool calls. Assume the three resources are configured, `inputs`
 contains `sales.csv` and `analyze.py`, and `worker` has Python:
 
-```text
+```python3
 list_resources()
 copy(source="inputs:sales.csv", destination="worker:sales.csv")
 copy(source="inputs:analyze.py", destination="worker:analyze.py")
