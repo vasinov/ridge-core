@@ -3,6 +3,12 @@
 `ridge-mcp` exposes the configured inventory over local stdio using the
 official MCP Python SDK. It has no network listener.
 
+Hosts that own a multi-call workflow can use the Python `ManagedMCPSession`
+caller helper for automatic renewal and token injection. This requires host
+integration; the server does not keep idle sessions alive on its own. See
+[managed caller sessions](guides/coordination.md#managed-caller-sessions) for a
+runnable example, cancellation, and failure behavior.
+
 Background cancellation records durable intent and survives a client disconnect.
 Inspect the returned job: `cancelled` confirms owned-local-group shutdown, `lost`
 means uncertainty, and a nonterminal status with `cancellation_requested` means

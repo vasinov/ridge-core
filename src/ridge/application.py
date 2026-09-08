@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import copy as shallow_copy
 from dataclasses import replace
@@ -37,6 +37,7 @@ from ridge.resource import (
     ResourceCapabilities,
     StreamingComputeCapability,
 )
+from ridge.sessions import ManagedSession
 from ridge.transfer import copy
 
 
@@ -53,6 +54,20 @@ class RidgeService:
         self._authorization = authorization or AuthorizationPolicy.unrestricted()
         self._jobs = jobs
         self._lock_token: str | None = None
+        self._managed_check: Callable[[], None] | None = None
+
+    def lock_session(
+        self, scopes: Sequence[JobScope], *, lease_seconds: float = 300, wait_seconds: float = 0
+    ) -> ManagedSession:
+        """Own acquisition, automatic renewal, and release around a Python workflow."""
+        if self._managed_check is not None or self._lock_token is not None:
+            raise ValueError("create managed sessions from an unbound service")
+        return ManagedSession(self, scopes, lease_seconds=lease_seconds, wait_seconds=wait_seconds)
+
+    def _operation_token(self) -> str | None:
+        if self._managed_check is not None:
+            self._managed_check()
+        return self._lock_token
 
     @classmethod
     def from_config(cls, config_path: str | Path) -> RidgeService:
@@ -69,6 +84,8 @@ class RidgeService:
 
     def with_lock(self, token: str | None) -> RidgeService:
         """Return a request-scoped service using an explicit coordination session."""
+        if self._managed_check is not None:
+            raise ValueError("a managed service cannot be rebound")
         service = shallow_copy(self)
         service._lock_token = token
         return service
@@ -169,7 +186,7 @@ class RidgeService:
             return
         self._reconcile_jobs()
         with self._coordination().operation(
-            scopes, token=self._lock_token, local_only=self._local_scopes(scopes)
+            scopes, token=self._operation_token(), local_only=self._local_scopes(scopes)
         ):
             yield
 
@@ -242,7 +259,7 @@ class RidgeService:
                 "timeout_seconds": timeout_seconds,
             },
             idempotency_key=idempotency_key,
-            lock_token=self._lock_token,
+            lock_token=self._operation_token(),
             local_only=self._local_scopes(scopes),
         )
 
@@ -368,7 +385,7 @@ class RidgeService:
             {"resource": resource, "path": path},
             payload=content,
             idempotency_key=idempotency_key,
-            lock_token=self._lock_token,
+            lock_token=self._operation_token(),
             local_only=self._local_scopes(scopes),
         )
 
@@ -450,7 +467,7 @@ class RidgeService:
                 "destination": f"{destination_location.resource}:{destination_location.path}",
             },
             idempotency_key=idempotency_key,
-            lock_token=self._lock_token,
+            lock_token=self._operation_token(),
             local_only=self._local_scopes(scopes),
         )
 

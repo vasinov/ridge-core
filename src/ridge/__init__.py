@@ -18,6 +18,7 @@ from ridge.resource import (
     TransferDestination,
     TransferSource,
 )
+from ridge.sessions import ManagedMCPSession, ManagedSession
 
 __all__ = [
     "AuthorizationDeniedError",
@@ -34,6 +35,8 @@ __all__ = [
     "LoadedConfiguration",
     "LockConflictError",
     "LockOwnershipError",
+    "ManagedMCPSession",
+    "ManagedSession",
     "Operation",
     "ProviderContext",
     "Resource",

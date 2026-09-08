@@ -7,6 +7,9 @@ observation—not the domain program or its dependencies.
 
 ## Runnable walkthrough
 
+[Managed caller sessions](../guides/coordination.md#managed-caller-sessions) includes
+a read-only MCP-host example that maintains ownership across several lease periods.
+
 [Sales CSV to regional report](csv-report.md): start with the credential-free
 [local quickstart](../getting-started.md), then change the worker to Docker and
 observe a background run. Includes expected outputs, cleanup, and a direct-tool

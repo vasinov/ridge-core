@@ -354,3 +354,14 @@ to uncertain operations, and records a reason without signalling processes.
 
 See [Resource coordination](guides/coordination.md) for the complete caller contract,
 lease bounds, bounded discovery, and external-access limitations.
+
+`sessions` owns optional caller-side managed scopes: a synchronous Python renewal
+thread and an asyncio MCP-client renewal task. They use the existing acquisition,
+renewal, and release contract; they do not change persisted lease semantics or
+renew merely because a server is alive. The host owns workflow lifetime. Bound
+calls check local health before admission; the state store remains authoritative.
+The first renewal error or missed local deadline permanently fails that helper,
+with no retry, reacquisition, rollback, or cancellation of admitted work. Exit
+stops renewal and attempts release; errors remain visible without masking an
+existing body exception. A live but hung host can keep renewing. MCP hosts must
+explicitly integrate token injection and keep their event loop responsive.

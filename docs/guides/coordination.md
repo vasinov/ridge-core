@@ -69,6 +69,81 @@ the same operation pairs and supply `lock_token` on every participating call.
 long pauses or long-running operations if further calls must remain in the session;
 active work retains its claims even when the session expires.
 
+## Managed caller sessions
+
+Python hosts can own renewal around a workflow instead of asking a model to
+remember lease deadlines:
+
+```python
+from ridge import JobScope, Operation, RidgeService
+
+ridge = RidgeService.from_config("ridge.yaml")
+scopes = [JobScope("project-files", Operation.DATA_STAT)]
+with ridge.lock_session(scopes) as session:
+    metadata = session.service.stat_data("project-files", "README.md")
+    # Model reasoning or long synchronous calls can occur within this scope.
+    session.check()
+```
+
+The single-use context acquires the reservation, runs a renewal thread every
+third of the lease duration, and returns a service that attaches the token and
+checks session health before foreground and background admission. Cached service
+views cannot be used after exit or rebound to another token. The host must use
+this view for participating calls; this is not a new security boundary.
+
+For an already-connected MCP `Client`, use the asyncio caller helper:
+
+```python
+from ridge import JobScope, ManagedMCPSession, Operation
+
+async with ManagedMCPSession(client, [JobScope("project-files", Operation.DATA_STAT)]) as session:
+    result = await session.call_tool(
+        "stat_data", {"resource": "project-files", "path": "README.md"}
+    )
+    # Await model turns here while an independent task renews the lease.
+```
+
+The client must outlive the managed scope. Route the six resource tools
+(`execute`, `list_data`, `read_data`, `write_data`, `stat_data`, `copy`) through
+`session.call_tool`; use the original client for discovery, job observation, and
+other control tools. The helper injects the token and rejects caller-supplied
+tokens. Ordinary tool results, including errors, retain their MCP representation.
+Do not block the asyncio event loop with synchronous model calls or CPU work.
+Existing third-party MCP hosts must integrate this lifecycle explicitly; merely
+installing the Ridge MCP server does not enable client-side renewal.
+
+Run the bounded, read-only example from a source checkout:
+
+```bash
+uv run examples/managed_session.py --config ridge.example.yaml --resource project-files --path README.md
+```
+
+It performs three stats separated by pauses longer than its one-second lease.
+The short lease is for demonstration; ordinary managed sessions default to five
+minutes and accept the same lease and acquisition-wait bounds as manual sessions.
+There is no new YAML setting; `state.directory` and `lock_key` apply unchanged.
+
+Both helpers fail closed on the first renewal error or missed local deadline:
+further managed calls fail, `check()` reports the failure, and context exit also
+reports it. They never retry, silently reacquire, force-release, or terminate
+already-admitted work. Heartbeat errors do not asynchronously interrupt arbitrary
+host code; call `check()` between non-Ridge workflow steps when useful. If another
+exception is already propagating, renewal/cleanup failures are attached as exception
+notes rather than masking it. Otherwise failures raise at exit (multiple failures
+use an exception group). MCP renewal requests time out after at most one third
+of the lease, capped at ten seconds; release has a ten-second timeout.
+
+Exit stops renewal and attempts release, including on workflow cancellation.
+An interrupted acquisition without a returned token may leave an idle reservation
+until its lease expires. Failed release also leaves recovery to the existing
+expiry/inspection rules. A host crash stops renewal; a hung host whose heartbeat
+still runs can retain ownership. Hosts own workflow lifetime, cancellation, and
+overall timeouts. These helpers do not supervise independent CLI invocations.
+Custom Python authorizers must tolerate renewal calls from the heartbeat thread
+concurrently with workflow calls; provider execution stays on its existing path.
+Active work still follows the existing expiry and conservative recovery rules;
+no operation timeout or remote-termination guarantee is added.
+
 ## Inspecting abandoned work
 
 `ridge locks list` returns an authorized page of outstanding sessions and operations;

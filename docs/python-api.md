@@ -33,6 +33,19 @@ returned token to `with_lock(token)`. That returns a separate service view, so
 concurrent callers do not mutate one another's session selection. Close ownership
 with `release_locks(token)`; see [session semantics](guides/coordination.md).
 
+Prefer `with ridge.lock_session(scopes) as session:` for host-owned workflows;
+`session.service` attaches the token and a background thread renews the lease.
+`ManagedMCPSession(client, scopes)` provides an asyncio context with
+`session.call_tool(...)` for MCP hosts. Both are single-use and fail closed on
+renewal failure. See [managed caller sessions](guides/coordination.md#managed-caller-sessions)
+for lifecycle, cancellation, and integration requirements.
+
+## Managed sessions
+
+::: ridge.ManagedSession
+
+::: ridge.ManagedMCPSession
+
 ## Application service
 
 ::: ridge.application.RidgeService
