@@ -35,6 +35,18 @@ scratch artifacts. `.gitignore` helps normal staging but does not remove already
 tracked files or sanitize arbitrary archives. Keep general runtime requirements
 and reproducible development commands public.
 
+## Continuous integration
+
+The `Tests` GitHub Actions workflow runs on pull requests to `main`, pushes to
+`main`, and manual runs. It installs locked dependencies and runs the deterministic
+test suite on Linux with Python 3.11–3.14 and on macOS with Python 3.14. A separate
+Linux job runs lint, formatting, type checks, and wheel/source-distribution builds.
+The README badge reports the complete workflow's status on `main`.
+
+These checks do not require cloud credentials or provision external services.
+They do not replace realistic Docker, SSH, or S3 acceptance when those workflows
+change. Documentation is checked and published by the separate workflow below.
+
 ## Documentation publishing
 
 The `Documentation` GitHub Actions workflow builds the MkDocs site on pull
