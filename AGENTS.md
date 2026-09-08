@@ -35,9 +35,22 @@ current contract.
 
 Before a significant architectural or cross-cutting change, read the relevant
 sections of `docs/architecture.md` and the owning workflow guides, then confirm
-the scope of the requested change. Update the owning document when behavior or
-an architectural decision changes. Update `README.md` only for material
-user-facing changes.
+the scope of the requested change.
+
+For every feature addition, modification, or bug fix, review documentation impact
+before implementation and recheck it against the verified result. Inspect the
+existing owning docs and relevant README sections, examples, configuration,
+CLI/MCP help, and API/provider references. Update affected claims and examples in
+the same change; do not defer correctness to a later documentation pass. Update
+`README.md` only for material user-facing changes. If no updates are needed,
+briefly state why in the task handoff.
+
+Prefer revising existing coverage over appending sections or creating new pages.
+Consolidate overlapping explanations, compact repetitive prose, remove superseded
+guidance, and link to one owning explanation where appropriate. Keep this review
+scoped to affected workflows, not an unrelated documentation rewrite. Lead with
+supported behavior and retain accurate, actionable limitations and safety warnings;
+remove defensive repetition without overstating guarantees.
 
 ## Repository structure
 
