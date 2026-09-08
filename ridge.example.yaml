@@ -1,5 +1,5 @@
 # Optional; defaults to .ridge beside this YAML file. Keep durable state outside
-# resource trees that agents might copy or replace. This example uses root: .,
+# resource trees that agents might copy, replace, or delete. This example uses root: .,
 # so it places state in a sibling directory. Choose a project-specific location;
 # inventories coordinate only when they share this directory and matching keys.
 state:
@@ -43,6 +43,8 @@ resources:
 
 # Omit permissions for unrestricted trusted mode. When present, the map is
 # default-deny and grants only the exact operations listed for each resource.
+# Add data.delete only where explicit cleanup is intended; recursion is a request
+# option, not a separate grant. Unrestricted mode includes deletion on built-ins.
 # permissions:
 #   project-files:
 #     - data.list

@@ -5,6 +5,7 @@ from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Autho
 from ridge.config import LoadedConfiguration, load_configuration, load_registry
 from ridge.errors import AuthorizationDeniedError, LockConflictError, LockOwnershipError, RidgeError
 from ridge.model import (
+    DeleteResult,
     Job,
     JobKind,
     JobLog,
@@ -19,6 +20,7 @@ from ridge.provider import ProviderContext, ResourceProvider, ResourceProviderRe
 from ridge.registry import ResourceRegistry
 from ridge.resource import (
     ComputeCapability,
+    DeleteCapability,
     FilesystemCapability,
     Resource,
     ResourceCapabilities,
@@ -36,6 +38,8 @@ __all__ = [
     "AuthorizationRequest",
     "Authorizer",
     "ComputeCapability",
+    "DeleteCapability",
+    "DeleteResult",
     "FilesystemCapability",
     "Job",
     "JobKind",

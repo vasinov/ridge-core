@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from ridge.errors import OutputLimitExceededError
 from ridge.resource import (
     ComputeCapability,
+    DeleteCapability,
     FilesystemCapability,
     StorageCapability,
     TransferCapability,
@@ -14,6 +15,21 @@ from ridge.resource import (
 
 _FIRST = b"\x00ridge-first\xff"
 _REPLACEMENT = b"\x00ridge-replacement\xff"
+
+
+def check_delete_capability(
+    capability: DeleteCapability,
+    *,
+    path: str,
+    write: Callable[[str, bytes], None],
+    exists: Callable[[str], bool],
+) -> None:
+    """Delete one caller-selected disposable entry and repeat against its absence."""
+    write(path, _FIRST)
+    assert exists(path), "deletion fixture was not created"
+    assert capability.delete(path).outcome in {"deleted", "acknowledged"}
+    assert not exists(path), "deleted entry remains visible"
+    assert capability.delete(path).outcome in {"missing", "acknowledged"}
 
 
 def check_filesystem_capability(

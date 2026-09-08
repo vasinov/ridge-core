@@ -111,6 +111,14 @@ def _work(directory: Path, job_id: str, gate: int) -> int:
             payload = payload_path.read_bytes()
             service.write_data(cast(str, request["resource"]), cast(str, request["path"]), payload)
             result_value = {"bytes_written": len(payload)}
+        elif kind is JobKind.DELETE:
+            result_value = asdict(
+                service.delete_data(
+                    cast(str, request["resource"]),
+                    cast(str, request["path"]),
+                    recursive=cast(bool, request["recursive"]),
+                )
+            )
         else:
             result = service.copy(cast(str, request["source"]), cast(str, request["destination"]))
             result_value = asdict(result)

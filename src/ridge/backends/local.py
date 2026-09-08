@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import BinaryIO
 
+from ridge.backends._scripts.deletion import DeletePathError, delete_path
 from ridge.backends._source import TRANSFER_HELPER_SOURCE
 from ridge.backends._transfer import ProcessTransferOperations
 from ridge.errors import (
@@ -21,6 +22,7 @@ from ridge.errors import (
     PathTypeError,
 )
 from ridge.model import (
+    DeleteResult,
     ExecResult,
     FileKind,
     FileStat,
@@ -168,7 +170,7 @@ class _InspectableResource:
         self._filesystem = _RootedFilesystem(root)
         self._configured_properties = dict(configured_properties or {})
         self._transfer = ProcessTransferOperations(self.name, self._transfer_command)
-        self.capabilities = ResourceCapabilities(filesystem=self, transfer=self)
+        self.capabilities = ResourceCapabilities(filesystem=self, transfer=self, delete=self)
 
     @property
     def root(self) -> Path:
@@ -222,6 +224,15 @@ class _InspectableResource:
     def stat(self, path: str) -> FileStat:
         return self._filesystem.stat(path)
 
+    def delete(self, path: str, *, recursive: bool = False) -> DeleteResult:
+        try:
+            return DeleteResult(delete_path(self.root, path, recursive=recursive))
+        except DeletePathError as exc:
+            error = InvalidPathError if exc.kind == "invalid_path" else PathTypeError
+            raise error(str(exc)) from exc
+        except (OSError, RuntimeError) as exc:
+            raise ExecutionError(f"cannot delete {path}: {exc}") from exc
+
 
 class LocalResource(_InspectableResource):
     provider_name = "local"
@@ -237,6 +248,7 @@ class LocalResource(_InspectableResource):
             compute=self,
             filesystem=self,
             transfer=self,
+            delete=self,
         )
 
     def _detected_properties(self) -> Mapping[str, PropertyScalar]:

@@ -25,7 +25,7 @@ outside protection.
 Ridge coordinates participating CLI and MCP callers through a shared local SQLite
 database. `state.directory` defaults to `.ridge` beside the configuration and
 contains `state.sqlite3` plus job and operation artifacts. Keep state outside copied
-or replaced trees and on a local filesystem. Separate state directories do not
+or replaced/deleted trees and on a local filesystem. Separate state directories do not
 coordinate, including when their inventories refer to the same remote targets.
 
 Each resource optionally declares `lock_key`, defaulting to its name. Equal keys
@@ -33,10 +33,12 @@ within one state directory share coordination. Configure equal keys for aliases
 or overlapping roots; Ridge does not infer physical identity. Coordination is
 advisory at Ridge's application boundary, not a remote lock.
 
-Reads, lists, and stats take shared claims. Writes and execution take exclusive
+Reads, lists, and stats take shared claims. Writes, deletion, and execution take exclusive
 claims. Copy takes shared source and exclusive destination claims, combining equal
 keys into one exclusive claim. Ordinary calls acquire temporary claims and fail
 immediately on contention. Background jobs are not queued waiting for claims.
+Deletion sessions must declare `data.delete`, including for background submission;
+`data.write` ownership alone does not authorize or declare deletion.
 
 Explicit sessions reserve a complete set of resource/operation pairs atomically.
 Every pair must be supported and authorized before acquisition. Calls recheck

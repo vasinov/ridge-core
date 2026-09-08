@@ -9,7 +9,11 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Never
+from typing import TYPE_CHECKING, Any, Never
+
+# At runtime deletion is prepended to this script for the remote interpreter.
+if TYPE_CHECKING:
+    from ridge.backends._scripts.deletion import DeletePathError, delete_path  # noqa: TC004
 
 
 def reply(value: dict[str, Any]) -> None:
@@ -61,6 +65,15 @@ def main() -> None:
     operation = sys.argv[2]
     root_text = sys.argv[1]
     path_text = request.get("path", ".")
+    if operation == "delete":
+        try:
+            outcome = delete_path(Path(root_text), path_text, recursive=request["recursive"])
+        except DeletePathError as error:
+            fail(error.kind, str(error) + "; deletion may be partial; no rollback")
+        except (OSError, RuntimeError) as error:
+            fail("execution", str(error) + "; deletion may be partial; no rollback")
+        reply({"ok": True, "outcome": outcome})
+        return
     root, target = rooted(root_text, path_text)
 
     if operation == "exec":

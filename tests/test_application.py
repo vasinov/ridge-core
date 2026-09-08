@@ -68,6 +68,7 @@ def test_service_reports_available_background_operations_with_canonical_names(
     assert configured.background_operations == (
         Operation.COMPUTE_EXEC,
         Operation.DATA_WRITE,
+        Operation.DATA_DELETE,
     )
     assert Operation.DATA_READ not in configured.background_operations
     assert unavailable.background_operations == ()

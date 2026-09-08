@@ -52,10 +52,17 @@ resource's `provider_name`. Compose at most one of `filesystem` and `storage`
 per resource so data requests have unambiguous addressing. Either advertises
 the four `data` operations. Compute is optional. Transfer requires a data
 capability and advertises `supports_copy`, not additional operation grants.
+Optional `delete=implementation` requires one data addressing capability and
+advertises `data.delete`. Implement `DeleteCapability.delete(path, recursive=False)`
+returning `DeleteResult`, following [deletion semantics](concepts/resources.md#deletion).
+Do not advertise deletion merely because existing write methods replace entries.
 
 `ridge.conformance` contains reusable destructive checks for compute,
-filesystem, storage, and single-file transfer implementations. Run them only
+filesystem, storage, deletion, and single-file transfer implementations. Run them only
 against disposable roots, prefixes, or test resources.
+`check_delete_capability` takes an exact disposable `path`, a write callback,
+and an existence callback. It verifies removal and repeated missing deletion;
+providers must additionally test recursion, boundaries, and failure semantics.
 
 Providers are trusted in-process Python. They execute with Ridge's ambient
 authority and are not sandboxed by Ridge request authorization.

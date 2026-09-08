@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, cast
 
 import boto3  # pyright: ignore[reportMissingTypeStubs]
+from botocore.config import Config  # pyright: ignore[reportMissingTypeStubs]
 from botocore.exceptions import (  # pyright: ignore[reportMissingTypeStubs]
     BotoCoreError,
     ClientError,
@@ -20,6 +21,7 @@ from ridge.errors import (
     UnsupportedOperationError,
 )
 from ridge.model import (
+    DeleteResult,
     ObjectEntry,
     ObjectPage,
     ObjectStat,
@@ -221,7 +223,8 @@ class S3Resource:
         self.region = region
         self._configured_properties = dict(configured_properties or {})
         self._client: Any = client
-        self.capabilities = ResourceCapabilities(storage=self, transfer=self)
+        self._delete_client: Any = client
+        self.capabilities = ResourceCapabilities(storage=self, transfer=self, delete=self)
 
     @property
     def client(self) -> Any:
@@ -316,6 +319,21 @@ class S3Resource:
 
     def stat_object(self, key: str) -> ObjectStat:
         return self._stat_full_key(self._full_key(key))
+
+    def delete(self, path: str, *, recursive: bool = False) -> DeleteResult:
+        if recursive:
+            raise ValueError("recursive deletion is not supported for object keys")
+        key = self._full_key(path)
+        if self._delete_client is None:
+            client_factory = cast(Any, boto3.client)  # pyright: ignore[reportUnknownMemberType]
+            self._delete_client = client_factory(
+                "s3", region_name=self.region, config=Config(retries={"total_max_attempts": 1})
+            )
+        try:
+            self._delete_client.delete_object(Bucket=self.bucket, Key=key)
+        except (BotoCoreError, ClientError) as exc:
+            raise _storage_failure("delete", exc) from exc
+        return DeleteResult("acknowledged")
 
     def open_transfer_source(self, path: str) -> TransferSource:
         return _S3TransferSource(self, self._full_key(path))

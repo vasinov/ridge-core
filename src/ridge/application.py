@@ -7,18 +7,24 @@ from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import copy as shallow_copy
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Literal, Never, cast
 
 from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Authorizer
 from ridge.config import LoadedConfiguration, load_configuration
 from ridge.coordination import Coordination
-from ridge.errors import AuthorizationDeniedError, JobsUnavailableError, UnsupportedOperationError
+from ridge.errors import (
+    AuthorizationDeniedError,
+    InvalidPathError,
+    JobsUnavailableError,
+    UnsupportedOperationError,
+)
 from ridge.jobs import JobManager
 from ridge.model import (
     CopyRequest,
     CopyResult,
     DataPage,
+    DeleteResult,
     ExecResult,
     FileStat,
     Job,
@@ -35,6 +41,7 @@ from ridge.model import (
 from ridge.registry import ResourceRegistry
 from ridge.resource import (
     ComputeCapability,
+    DeleteCapability,
     Resource,
     ResourceCapabilities,
     StreamingComputeCapability,
@@ -401,6 +408,67 @@ class RidgeService:
                 return target.storage.stat_object(path)
             assert target.filesystem is not None
             return target.filesystem.stat(path)
+
+    def _prepare_delete(
+        self, resource: str, path: str, recursive: bool, *, background: bool = False
+    ) -> DeleteCapability:
+        if not path or "\x00" in path:
+            raise ValueError("delete requires a nonempty path without NUL bytes")
+        if type(recursive) is not bool:
+            raise ValueError("recursive must be a boolean")
+        target = self._registry.get(resource)
+        capability = target.capabilities.delete
+        if capability is None:
+            self._unsupported(target, Operation.DATA_DELETE)
+        self._authorize(
+            resource,
+            Operation.DATA_DELETE,
+            {
+                "path": path,
+                "recursive": recursive,
+                "background": background,
+            },
+        )
+        if recursive and target.capabilities.addressing == "object":
+            raise ValueError("recursive deletion is not supported for object keys")
+        if target.capabilities.addressing == "filesystem":
+            requested = PurePosixPath(path)
+            if requested.is_absolute() or not requested.name or requested.name == "..":
+                raise InvalidPathError("delete requires a relative non-root path")
+        return capability
+
+    def delete_data(self, resource: str, path: str, *, recursive: bool = False) -> DeleteResult:
+        """Delete an exact entry; recursive trees are non-atomic and never rolled back."""
+        target = self._prepare_delete(resource, path, recursive)
+        with self._operation((JobScope(resource, Operation.DATA_DELETE),)):
+            try:
+                return target.delete(path, recursive=recursive)
+            except BaseException as exc:
+                exc.add_note(
+                    "Deletion may be partial or unconfirmed; no rollback. Inspect before retrying."
+                )
+                raise
+
+    def submit_delete(
+        self,
+        resource: str,
+        path: str,
+        *,
+        recursive: bool = False,
+        idempotency_key: str | None = None,
+    ) -> Job:
+        """Submit one deletion attempt against the path/key as it exists when the worker runs."""
+        self._prepare_delete(resource, path, recursive, background=True)
+        scopes = (JobScope(resource, Operation.DATA_DELETE),)
+        self._reconcile_jobs()
+        return self._job_manager().submit(
+            JobKind.DELETE,
+            scopes,
+            {"resource": resource, "path": path, "recursive": recursive},
+            idempotency_key=idempotency_key,
+            lock_token=self._operation_token(),
+            local_only=self._local_scopes(scopes),
+        )
 
     def _prepare_copy(
         self,

@@ -1,6 +1,6 @@
 # Background jobs
 
-Execution, data writes, and copy can run as durable
+Execution, data writes, deletion, and copy can run as durable
 background jobs. The operation itself remains in its ordinary CLI command or
 MCP tool; the `jobs` namespace is only for lifecycle management.
 
@@ -17,6 +17,10 @@ priorities, dependencies, schedules, retries, or worker routing. SQLite stores
 metadata and results under `state.directory`; per-job files store logs. Direct
 write content is staged before submission returns; terminal cleanup attempts to
 remove it. Copy sources are opened only when execution begins.
+Deletion likewise targets the path/key at execution time. Its `delete` job kind
+requires `data.delete` for submission and observation and records an `outcome`
+result; see [deletion](../concepts/resources.md#deletion). Cancelling a delete
+does not restore removed entries, and remote work may continue after local shutdown.
 
 Background supervision requires a POSIX host with local filesystem locking and
 `ps` supporting `-axo pid=,pgid=,stat=` (macOS and Linux procps). Keep job state
@@ -132,7 +136,8 @@ directly when monitoring its lifecycle.
 
 Metadata, results, idempotency keys, and stdout/stderr logs are retained
 indefinitely under `state.directory` (default `.ridge` beside the config).
-There is no automatic expiration, pruning, or deletion command. Staged write
+There is no automatic expiration, pruning, or job-deletion command. `data.delete`
+is for resource data, not job retention. Staged write
 payload cleanup is attempted after verified shutdown or a fenced, unstarted attempt.
 Cleanup errors appear in the job's `error` field without replacing its operation
 result; inspect that field even for a successful job. Worker failures retain bounded

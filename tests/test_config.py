@@ -86,6 +86,7 @@ def test_loads_resources_and_resolves_roots_relative_to_config(tmp_path: Path) -
         Operation.DATA_READ,
         Operation.DATA_WRITE,
         Operation.DATA_STAT,
+        Operation.DATA_DELETE,
     )
     assert inspection.allowed_operations == inspection.supported_operations
     assert inspection.properties["purpose"].source == "configured"

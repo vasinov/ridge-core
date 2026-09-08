@@ -22,7 +22,9 @@ Built-in filesystem operations reject absolute paths and paths that resolve
 outside their configured root, including symbolic-link escapes. Contained paths
 such as `nested/../file` are accepted. Tree copy rejects
 absolute, broken, escaping, and top-level links plus hard links and special
-files.
+files. Deletion instead resolves parents and unlinks the final symbolic link,
+even if its target is missing or outside the root; recursion never follows links.
+It rejects deletion of the resource root. See [deletion](concepts/resources.md#deletion).
 
 Path validation is not containment against hostile concurrent filesystem changes.
 Use roots whose directory structure is controlled by trusted participants, and
@@ -42,6 +44,8 @@ Job arguments, staged write content, output, and errors may
 contain sensitive data. Metadata and logs have no automatic expiration. Ignore
 `.ridge/` (and any custom state directory) in your own repository and review
 artifacts before publishing. See [retention](guides/jobs.md#retention-and-sensitive-data).
+Place state outside resource trees that callers can delete or replace; coordination
+does not protect its own database from a resource operation targeting those files.
 
 Coordination sessions and operations share the jobs database. Session tokens are
 returned to callers and stored as hashes; protect the returned token and any shell

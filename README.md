@@ -54,6 +54,9 @@ shows the commands and provides bundled inputs.
   the operations your Ridge configuration allows.
 - **Pick up work later.** Background jobs provide durable IDs, results, and logs
   that another client can inspect after submission.
+- **Clean up explicitly.** Delete exact files, directory trees, or object keys
+  with a separate `data.delete` grant, in foreground or background.
+  See [deletion semantics](https://vasinov.github.io/ridge-core/concepts/resources/#deletion).
 
 Coordination requires shared local Ridge state and matching resource lock keys;
 it does not exclude access outside Ridge. See [multi-agent coordination](https://vasinov.github.io/ridge-core/guides/coordination/).

@@ -169,11 +169,15 @@ async def test_server_declares_explicit_tools_and_annotations(tmp_path: Path) ->
         "read_job_logs",
         "stat_data",
         "write_data",
+        "delete_data",
     }
     assert tools["read_data"].annotations is not None
     assert tools["read_data"].annotations.read_only_hint is True
     assert tools["write_data"].annotations is not None
     assert tools["write_data"].annotations.destructive_hint is True
+    assert tools["delete_data"].annotations is not None
+    assert tools["delete_data"].annotations.destructive_hint is True
+    assert tools["delete_data"].annotations.idempotent_hint is False
     assert tools["execute"].annotations is not None
     assert tools["execute"].annotations.idempotent_hint is False
 
@@ -451,5 +455,5 @@ async def test_mcp_background_write_returns_handle_and_job_tools_reconnect(
 
     assert any(item["id"] == job_id for item in cast(list[dict[str, object]], jobs["jobs"]))
     local = cast(list[dict[str, object]], resources["resources"])[0]
-    assert local["background_operations"] == ["compute.exec", "data.write"]
+    assert local["background_operations"] == ["compute.exec", "data.write", "data.delete"]
     assert (tmp_path / "background.txt").read_text() == "ridge"

@@ -5,7 +5,7 @@ Its provider composes one or more capability implementations behind that
 identity.
 
 Resources select a `provider` (`local`, `docker`, `ssh`, `s3`, or an installed
-provider). Callers use `compute.exec` and `data.list/read/write/stat`, not
+provider). Callers use `compute.exec` and `data.list/read/write/stat/delete`, not
 backend-specific operation families. Permissions determine which supported
 operations are allowed; omitting permissions allows all supported operations.
 
@@ -21,12 +21,13 @@ operation is allowed.
 Invalid configuration and unknown resources fail before executing the requested
 resource operation; installed providers are trusted code during loading too.
 
-Internally, Ridge composes four mechanism contracts:
+Internally, Ridge composes five mechanism contracts:
 
 - **compute** executes an argument vector;
 - **filesystem** lists, reads, writes, and stats rooted paths;
 - **storage** lists, reads, writes, and stats object keys;
 - **transfer** opens streaming sources and destinations used by copy.
+- **delete** optionally removes exact entries using the resource's data addressing model.
 
 Filesystem and object storage remain separate because directories, symbolic
 links, path traversal, keys, prefixes, pagination, and metadata have different
@@ -64,3 +65,38 @@ The registry derives supported operations from the typed capability collection.
 Providers do not declare arbitrary commands or MCP tools. Adding a generic
 operation remains a Ridge API design decision so its semantics stay consistent
 across frontends and implementations.
+
+## Deletion
+
+`ridge delete RESOURCE PATH` and MCP/Python `delete_data(resource, path,
+recursive=False)` require `data.delete`, without an additional list, read, or stat
+grant. Deletion is optional for installed providers; all built-ins support it.
+It removes data within a resource, not the configured resource, container, host,
+bucket, job history, or retained recovery artifacts automatically.
+
+Filesystem deletion removes regular files, symbolic links (including broken or
+escaping final links, without following their targets), and empty directories.
+A nonempty directory requires explicit `--recursive` / `recursive=true`.
+Recursion is an intent check, not another permission or confirmation prompt.
+Parent paths must remain inside the root; the resource root itself, absolute
+paths, final `..` components, and special files are rejected. During recursion,
+links are unlinked and special files fail the attempt. No glob expansion occurs.
+
+Success returns `{"outcome": "deleted"}` or `{"outcome": "missing"}` for
+filesystems. S3 deletes one exact current key and returns
+`{"outcome": "acknowledged"}` without a prior-existence claim or a HEAD request.
+Missing targets succeed. S3 rejects `recursive=true`; it never expands a key
+into a prefix. See [S3 version semantics](../resources/s3.md#deletion).
+
+Deletion is foreground by default, with no operation timeout. Use `--background`
+or `background=true` for a durable, cancellable attempt. Both modes take exclusive
+resource claims and accept coordination sessions. Background requests identify
+the path/key as it exists when the worker runs, not a snapshotted entry.
+
+Recursive deletion is non-atomic. Failure or cancellation may leave a partially
+deleted tree; removed data is not restored. A transport failure can leave work
+running or its outcome unconfirmed. Inspect the target and
+[uncertain claims](../guides/coordination.md) before retrying or force-releasing.
+There is no rollback, trash, version purge, or automatic retry. A successful
+result does not prevent later recreation by another writer. Background
+`idempotency_key` deduplicates submission, not deletion effects.

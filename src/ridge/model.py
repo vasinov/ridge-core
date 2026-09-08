@@ -15,24 +15,26 @@ class Operation(StrEnum):
     DATA_READ = "data.read"
     DATA_WRITE = "data.write"
     DATA_STAT = "data.stat"
+    DATA_DELETE = "data.delete"
 
     @property
     def effect(self) -> OperationEffect:
         if self is Operation.COMPUTE_EXEC:
             return "execute"
-        if self is Operation.DATA_WRITE:
+        if self in {Operation.DATA_WRITE, Operation.DATA_DELETE}:
             return "write"
         return "read"
 
     @property
     def idempotent(self) -> bool:
-        return self is not Operation.COMPUTE_EXEC
+        return self not in {Operation.COMPUTE_EXEC, Operation.DATA_DELETE}
 
     @property
     def supports_background(self) -> bool:
         return self in {
             Operation.COMPUTE_EXEC,
             Operation.DATA_WRITE,
+            Operation.DATA_DELETE,
         }
 
 
@@ -120,6 +122,14 @@ class JobKind(StrEnum):
     EXECUTE = "execute"
     WRITE = "write"
     COPY = "copy"
+    DELETE = "delete"
+
+
+@dataclass(frozen=True, slots=True)
+class DeleteResult:
+    """Bounded outcome; acknowledged does not assert prior existence (object storage)."""
+
+    outcome: Literal["deleted", "missing", "acknowledged"]
 
 
 @dataclass(frozen=True, slots=True)

@@ -219,6 +219,16 @@ class CopyOperationResult(_WireModel):
     job: JobResult | None
 
 
+class DeleteResult(_WireModel):
+    outcome: Literal["deleted", "missing", "acknowledged"]
+
+
+class DeleteOperationResult(_WireModel):
+    mode: Literal["completed", "submitted"]
+    result: DeleteResult | None
+    job: JobResult | None
+
+
 def _tool_errors(function: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(function)
     def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
@@ -400,6 +410,12 @@ _WRITE = ToolAnnotations(
     idempotent_hint=True,
     open_world_hint=True,
 )
+_DELETE = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=False,
+    open_world_hint=True,
+)
 _EXECUTE = ToolAnnotations(
     read_only_hint=False,
     destructive_hint=True,
@@ -555,6 +571,35 @@ def create_server(service: RidgeService) -> MCPServer[None]:
             job=None,
         )
 
+    @server.tool(annotations=_DELETE, structured_output=True)
+    @_tool_errors
+    def delete_data(
+        resource: str,
+        path: str,
+        recursive: bool = False,
+        background: bool = False,
+        idempotency_key: str | None = None,
+        lock_token: str | None = None,
+    ) -> DeleteOperationResult:
+        """Delete an exact path/key. Nonempty trees require recursive; no rollback or root deletion."""
+        bound = service.with_lock(lock_token)
+        if background:
+            return DeleteOperationResult(
+                mode="submitted",
+                result=None,
+                job=_job_result(
+                    bound.submit_delete(
+                        resource, path, recursive=recursive, idempotency_key=idempotency_key
+                    )
+                ),
+            )
+        if idempotency_key is not None:
+            raise ToolError("idempotency_key requires background=true")
+        result = bound.delete_data(resource, path, recursive=recursive)
+        return DeleteOperationResult(
+            mode="completed", result=DeleteResult(**asdict(result)), job=None
+        )
+
     @server.tool(annotations=_READ_ONLY, structured_output=True)
     @_tool_errors
     def stat_data(resource: str, path: str, lock_token: str | None = None) -> DataStatResult:
@@ -685,6 +730,7 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         list_data,
         read_data,
         write_data,
+        delete_data,
         stat_data,
         copy,
         list_jobs,

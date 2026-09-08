@@ -289,6 +289,33 @@ def write_command(
     service.write_data(resource, path, content)
 
 
+@app.command("delete")
+@_handle_errors
+def delete_command(
+    ctx: typer.Context,
+    resource: str,
+    path: str,
+    recursive: Annotated[
+        bool, typer.Option(help="Delete a nonempty directory tree; no rollback.")
+    ] = False,
+    background: Annotated[bool, typer.Option(help="Submit a durable job.")] = False,
+    idempotency_key: Annotated[
+        str | None, typer.Option(help="Deduplicate a retried background submission.")
+    ] = None,
+) -> None:
+    """Delete an exact path/key, never the filesystem resource root. Missing targets succeed."""
+    service = _service(ctx)
+    if background:
+        job = service.submit_delete(
+            resource, path, recursive=recursive, idempotency_key=idempotency_key
+        )
+        typer.echo(f"submitted {job.id}")
+        return
+    if idempotency_key is not None:
+        raise RidgeError("--idempotency-key requires --background")
+    typer.echo(json.dumps(asdict(service.delete_data(resource, path, recursive=recursive))))
+
+
 @app.command("stat")
 @_handle_errors
 def stat_command(ctx: typer.Context, resource: str, path: str) -> None:

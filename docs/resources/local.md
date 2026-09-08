@@ -31,6 +31,8 @@ resolving outside the root fail; contained paths such as `nested/../file` are
 accepted. Writes create missing parents and replace existing regular files or
 symbolic links. Directories and special
 files are rejected at file destinations.
+Local resources also support [deletion](../concepts/resources.md#deletion),
+including explicit recursive tree deletion. The files-only grants above omit it.
 
 Commands run as the Ridge operating-system user with its ambient environment and
 can access anything that user can access.

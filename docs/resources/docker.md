@@ -16,6 +16,8 @@ root directory before using it; the configured executable must be Python 3.11
 or newer. Ridge sends standard-library helper source for argument-vector
 execution, in-container timeout enforcement, and rooted filesystem checks.
 The container does not need Ridge installed.
+Data [deletion](../concepts/resources.md#deletion) removes entries under the root,
+not the container, and supports foreground and background execution.
 
 Set `executable` when the Docker CLI is not available as `docker` on `PATH`.
 

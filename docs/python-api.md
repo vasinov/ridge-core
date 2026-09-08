@@ -85,6 +85,10 @@ for lifecycle, cancellation, and integration requirements.
 
 ::: ridge.resource.TransferCapability
 
+::: ridge.resource.DeleteCapability
+
+::: ridge.model.DeleteResult
+
 ## Provider construction
 
 ::: ridge.provider.ProviderContext

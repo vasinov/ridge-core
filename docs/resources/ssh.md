@@ -17,6 +17,8 @@ resources:
 The remote host must contain the configured Python 3.11+ executable. Ridge uses an
 ephemeral helper for argument-vector execution, timeout enforcement, and rooted
 filesystem operations.
+Data [deletion](../concepts/resources.md#deletion) uses the same helper and supports
+foreground and background attempts; cancellation does not prove remote work stopped.
 
 OpenSSH configuration, included files, agents, certificates, proxies, and host
 aliases remain active. Optional `identity_file` and `known_hosts_file` paths

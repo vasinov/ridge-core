@@ -81,6 +81,9 @@ an exact, default-deny policy: only the listed operation names are allowed for
 each listed resource. An empty map (`permissions: {}`) denies every resource
 operation. Unknown resources, unknown operations, duplicate grants, and grants
 for unsupported operations are configuration errors.
+Built-ins support `data.delete`; grant it explicitly only where cleanup is intended.
+It requires no `data.stat` grant. Keep `state.directory` outside trees callers can
+delete or replace; the example inventory deliberately adds no deletion grants.
 
 Permissions apply to operations performed through Ridge. Resource discovery and
 inspection remain available and expose configured properties plus supported and

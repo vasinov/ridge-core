@@ -12,6 +12,7 @@ ridge list RESOURCE [PATH] [--limit N] [--cursor TOKEN]
 ridge read RESOURCE PATH
 ridge write RESOURCE PATH (--text TEXT | --from FILE)
 ridge stat RESOURCE PATH
+ridge delete RESOURCE PATH [--recursive] [--background] [--idempotency-key KEY]
 ridge jobs list [--limit N] [--cursor TOKEN]
 ridge jobs inspect JOB_ID
 ridge jobs logs JOB_ID [--stream stdout|stderr] [--offset N]
@@ -51,7 +52,12 @@ Data commands use filesystem paths or exact object keys according to resource
 addressing. `list` returns a JSON page (`addressing`, `entries`, `next_cursor`);
 `stat` returns filesystem or object metadata. See [data semantics](concepts/resources.md).
 
-Add `--background` to `exec`, `write`, or `copy` to submit an
+`delete` returns JSON with an `outcome` of `deleted`, `missing`, or `acknowledged`.
+Nonempty directories require `--recursive`; filesystem roots and S3 prefix
+deletion are unsupported. See [deletion](concepts/resources.md#deletion) for
+symlinks, partial failure, and versioned objects.
+
+Add `--background` to `exec`, `write`, `delete`, or `copy` to submit an
 immediate durable job. Add `--idempotency-key KEY` when an agent may retry the
 same submission. The command prints `submitted JOB_ID`; use the `jobs`
 subcommands to reconnect to it.

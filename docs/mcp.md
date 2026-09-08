@@ -14,7 +14,7 @@ default_tools_approval_mode = "writes"
 ```
 
 The server provides explicit tools for discovery, inspection, execution,
-data operations (`list_data`, `read_data`, `write_data`, `stat_data`), copy,
+data operations (`list_data`, `read_data`, `write_data`, `stat_data`, `delete_data`), copy,
 job lifecycle, and resource coordination. `list_resources` returns
 concise capability summaries; call `inspect_resource` only for backend
 properties. Both results distinguish operations supported by a resource from
@@ -31,6 +31,13 @@ Data tools use `path` for either a relative filesystem path or an exact object
 key/prefix. `list_data` accepts `cursor` and `limit` and returns `addressing`,
 `entries`, and `next_cursor`. `stat_data` returns `addressing` and `metadata` with
 filesystem or object-specific fields. See [data semantics](concepts/resources.md).
+
+`delete_data(resource, path, recursive=false)` deletes one exact path/key using
+only `data.delete`. Its completed envelope contains `result: {outcome: ...}`
+(`deleted`, `missing`, or S3 `acknowledged`) and `job: null`. Nonempty directories
+require explicit recursion; S3 rejects recursion. Deletion is marked destructive
+and conservatively non-idempotent because versioned S3 can create new delete
+markers on repeated calls. See [deletion](concepts/resources.md#deletion).
 
 ## Content and discovery bounds
 
@@ -67,7 +74,7 @@ changing-history semantics.
 
 ## Background work
 
-The execution, write, and copy tools accept `background=true` and return a
+The execution, write, delete, and copy tools accept `background=true` and return a
 response whose `mode` is `completed` or `submitted`. Submitted responses contain
 a job handle. Use `list_jobs`, `inspect_job`, `read_job_logs`, and `cancel_job`
 to reconnect. Use background mode when runtime is uncertain, cancellation or

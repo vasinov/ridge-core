@@ -29,10 +29,12 @@ and provider inspection properties. Clients able to reach a Ridge frontend can
 therefore see this configuration metadata.
 
 The exact grant vocabulary is `compute.exec`, `data.list`, `data.read`,
-`data.write`, and `data.stat`. There are no separate copy/transfer grants.
+`data.write`, `data.stat`, and `data.delete`. There are no separate copy/transfer grants.
 `data.write` allows whole-tree replacement by copy on filesystem resources,
 including removal of destination-only entries. For files-only local access,
-grant the needed data operations and omit `compute.exec`.
+grant the needed data operations and omit `compute.exec`. Explicit deletion needs
+`data.delete`; withholding it does not prevent removal through whole-tree
+replacement or arbitrary execution. Recursion is an operation parameter, not a grant.
 
 CLI and local stdio do not establish independent caller identities; grants apply
 to the process's selected policy, not to individual agents.

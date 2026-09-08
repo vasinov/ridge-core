@@ -15,7 +15,7 @@ changing Ridge core.
 - `model` owns backend-neutral values and operation names.
 - `resource` owns capability protocols and the typed capability collection.
   Resource identity is separate from the compute, filesystem, storage, and
-  transfer implementations it composes.
+  transfer and optional deletion implementations it composes.
 - `backends` implement mechanisms and translate backend failures into Ridge
   errors. Remote command transports compose the shared helper protocol and
   operations rather than duplicate capability semantics.
@@ -66,6 +66,13 @@ changing Ridge core.
   or inlining it.
 - Filesystem writes create missing parents and replace an existing regular file
   or symbolic link by default. They reject directories and special files.
+- `data.delete` is an independently optional capability requiring data addressing.
+  The [data contract](concepts/resources.md#deletion) owns exact-target, recursive,
+  missing-result, and failure semantics. Application authorization and exclusive
+  admission precede deletion. Foreground and job workers invoke the same mechanism;
+  deletion never stages, rolls back, or retries. Shared standard-library deletion
+  code runs locally and is prepended to the Docker/SSH helper source. S3 uses a
+  deletion client with SDK retries disabled and no version ID or prefix expansion.
 - Execution is synchronous and unbounded by default; callers may request an
   explicit timeout. Selected mutating operations may instead be submitted to
   the durable local job supervisor. Ridge still has no interactive execution
@@ -94,8 +101,8 @@ changing Ridge core.
   capability operations are shared by Docker and SSH. Each resource owns only
   its transport, configuration, inspection, and availability behavior. This is
   the internal transport seam beneath the public capability and provider API.
-  Standalone Python files under `backends/_scripts` are packaged and loaded as
-  source without host-side execution. They use only the standard library and
+  Python helpers under `backends/_scripts` are packaged and loaded as
+  source; the shared deletion mechanism is also imported locally. They use only the standard library and
   run through the configured target Python; targets do not need Ridge installed.
 - Cross-resource copy is a coordinator operation over two resource locations,
   not a capability attributed to either endpoint. Files stream as raw bytes;
@@ -145,7 +152,7 @@ changing Ridge core.
 - The configuration file defines the resource inventory; resource locations
   identify data within it.
 - Object storage and rooted filesystems retain separate mechanism contracts,
-  exposed through shared `data.list/read/write/stat` application operations.
+  exposed through shared `data.list/read/write/stat` and optional `data.delete` operations.
   A resource selects at most one addressing model. Discovery reports that
   model and optional copy support, including for data-only installed providers.
   Object keys and prefixes are never normalized as filesystem paths.
@@ -187,8 +194,8 @@ changing Ridge core.
   limits do not bound captured execution output in memory or all response metadata.
 - MCP read-only, idempotent, and destructive annotations describe likely side
   effects for the host. They are hints and never substitute for authorization.
-- CLI data verbs are root commands: `list`, `read`, `write`, and `stat`.
-  MCP uses `list_data`, `read_data`, `write_data`, and `stat_data`; both frontends
+- CLI data verbs are root commands: `list`, `read`, `write`, `stat`, and `delete`.
+  MCP uses `list_data`, `read_data`, `write_data`, `stat_data`, and `delete_data`; both frontends
   dispatch through the same authorized application operations. Stat and list
   retain filesystem/object metadata. Direct reads/writes buffer content;
   foreground and background copy stream payloads through Ridge, outside model
@@ -244,7 +251,7 @@ Job artifacts occupy per-job directories beside it. Retention and handling of
 earlier development state are documented in the [jobs guide](guides/jobs.md).
 
 Ridge supports immediate, durable background execution. `compute.exec`,
-`data.write`, and cross-resource copy may be submitted in the background. Submission
+`data.write`, `data.delete`, and cross-resource copy may be submitted in the background. Submission
 is an option on the existing operation; only observation and cancellation live in the `jobs`
 namespace. Every submission receives one attempt without automatic retry.
 
@@ -329,11 +336,12 @@ stream in model context.
 
 Background support is domain metadata on canonical operations, projected
 through resource inspection only when the service has a job manager and the
-operation is currently allowed. `compute.exec` and `data.write` support
+operation is currently allowed. `compute.exec`, `data.write`, and `data.delete` support
 background submission. Direct writes use one `write` job kind and resource/path
 request shape regardless of addressing. `copy` also supports background
 submission as an application workflow, with source-read and destination-write
-job scopes. A background read operation is not provided.
+job scopes. Deletion uses a `delete` job kind with resource, path, and recursive
+request fields and a bounded outcome result. A background read operation is not provided.
 Foreground and background execution have the same timeout semantics and no
 timeout by default.
 

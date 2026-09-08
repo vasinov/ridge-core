@@ -14,6 +14,7 @@ from ridge.backends._source import HELPER_SOURCE, TRANSFER_HELPER_SOURCE
 from ridge.backends._transfer import ProcessTransferOperations
 from ridge.errors import InvalidPathError, PathTypeError, ResourceUnavailableError
 from ridge.model import (
+    DeleteResult,
     ExecResult,
     FileStat,
     ListEntry,
@@ -56,6 +57,7 @@ class DockerResource:
             compute=self,
             filesystem=self,
             transfer=self,
+            delete=self,
         )
 
     def _transfer_command(self, operation: str) -> tuple[str, ...]:
@@ -216,3 +218,6 @@ class DockerResource:
 
     def stat(self, path: str) -> FileStat:
         return self._operations.stat(path)
+
+    def delete(self, path: str, *, recursive: bool = False) -> DeleteResult:
+        return self._operations.delete(path, recursive=recursive)

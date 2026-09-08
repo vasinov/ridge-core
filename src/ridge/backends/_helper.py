@@ -18,7 +18,7 @@ from ridge.errors import (
     PathTypeError,
     RidgeError,
 )
-from ridge.model import ExecResult, FileKind, FileStat, ListEntry, PropertyScalar
+from ridge.model import DeleteResult, ExecResult, FileKind, FileStat, ListEntry, PropertyScalar
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +163,15 @@ class HelperOperations:
             )
         except (KeyError, TypeError) as exc:
             raise ExecutionError("invalid stat result from Ridge helper") from exc
+
+    def delete(self, path: str, *, recursive: bool = False) -> DeleteResult:
+        response = self._invoke(
+            "delete", {"path": path, "recursive": recursive}, timeout_seconds=None
+        )
+        outcome = response.get("outcome")
+        if outcome not in ("deleted", "missing"):
+            raise ExecutionError("invalid deletion result from Ridge helper")
+        return DeleteResult(outcome)
 
     def probe(self) -> Mapping[str, PropertyScalar]:
         response = self._invoke("probe", {"path": "."})

@@ -14,6 +14,14 @@ from ridge.backends._source import HELPER_SOURCE, TRANSFER_HELPER_SOURCE
 @pytest.mark.parametrize("source", [HELPER_SOURCE, TRANSFER_HELPER_SOURCE])
 def test_helper_source_is_standalone_importable_python(source: str, tmp_path: Path) -> None:
     tree = ast.parse(source)
+    # Type-checking-only imports describe prepended definitions, never remote dependencies.
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.If)
+            and isinstance(node.test, ast.Name)
+            and node.test.id == "TYPE_CHECKING"
+        ):
+            node.body = []
     # Helpers are shipped to Python without Ridge or third-party dependencies.
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
