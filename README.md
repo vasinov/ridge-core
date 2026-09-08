@@ -3,11 +3,11 @@
 [![Tests](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml)
 [![Documentation](https://github.com/vasinov/ridge-core/actions/workflows/docs.yml/badge.svg?branch=main)](https://vasinov.github.io/ridge-core/)
 
-Give your AI agents one way to work with local files, Docker containers, SSH
-hosts, and S3. Ridge exposes named resources through a CLI and a local MCP
-server, so agents can discover what is available, move data, and run programs
-without assembling backend-specific plumbing. It also coordinates multiple agents
-on shared resources and keeps background jobs available for later inspection.
+Give your AI agents one way to execute code and work with data across resources
+such as local machines, Docker containers, SSH hosts, and S3. Ridge exposes named
+resources through a CLI and a local MCP server, with extensible providers for
+additional backends. It also coordinates multiple agents on shared resources
+and keeps background jobs available for later inspection.
 
 ## From a request to a result
 
@@ -38,6 +38,10 @@ stream through Ridge; input files do not need to pass through the conversation.
 See the [agent walkthrough](https://vasinov.github.io/ridge-core/examples/csv-report/#with-an-agent) for the
 decision points and background-job variant.
 
+The same flow is available through the [CLI](https://vasinov.github.io/ridge-core/cli/);
+the [getting-started guide](https://vasinov.github.io/ridge-core/getting-started/)
+shows the commands and provides bundled inputs.
+
 ## Why Ridge?
 
 - **One workflow across backends.** Use `RESOURCE:PATH` locations instead of
@@ -54,30 +58,37 @@ decision points and background-job variant.
 Coordination requires shared local Ridge state and matching resource lock keys;
 it does not exclude access outside Ridge. See [multi-agent coordination](https://vasinov.github.io/ridge-core/guides/coordination/).
 
-## The same workflow in your terminal
+## Define your resources
 
-With the same resources and inputs already in place:
+Here is a local `ridge.yaml` for the example above:
 
-```bash
-ridge resources
-ridge copy inputs:sales.csv worker:sales.csv
-ridge copy inputs:analyze.py worker:analyze.py
-ridge exec worker --timeout 30 -- python3 analyze.py
-# After a successful exit:
-ridge copy worker:report.csv reports:report.csv
-ridge read reports report.csv
+```yaml
+resources:
+  inputs:
+    provider: local
+    root: ./inputs
+  worker:
+    provider: local
+    root: ./worker
+  reports:
+    provider: local
+    root: ./reports
+
+permissions:
+  inputs: [data.list, data.read, data.stat]
+  worker: [compute.exec, data.list, data.read, data.write, data.stat]
+  reports: [data.list, data.read, data.write, data.stat]
 ```
 
-```text
-region,revenue
-East,100.00
-West,200.00
-```
+The directories already exist beside the configuration file. The grants allow
+reading inputs, running code on the worker, and saving and reading reports.
+Change the worker's provider configuration to use Docker or SSH while keeping
+the resource name and agent workflow.
 
-Ridge loads `./ridge.yaml` by default; use `--config PATH` to choose another
-inventory. The [getting-started guide](https://vasinov.github.io/ridge-core/getting-started/) provides a complete
-local setup with bundled inputs. Explore [more examples](https://vasinov.github.io/ridge-core/examples/)
-for ML experiments, builds, scientific computing, and media processing.
+Ridge loads `./ridge.yaml` by default; use `--config PATH` for another inventory.
+See [Configuration](https://vasinov.github.io/ridge-core/configuration/) for options
+and [more examples](https://vasinov.github.io/ridge-core/examples/) for ML experiments,
+builds, scientific computing, and media processing.
 
 ## Install and connect
 

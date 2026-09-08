@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 from pathlib import Path
 
+import yaml
+
 from ridge import RidgeService
+
+
+def test_readme_inventory_matches_runnable_example() -> None:
+    root = Path(__file__).resolve().parents[1]
+    inventories = re.findall(r"```yaml\n(.*?)```", (root / "README.md").read_text(), re.DOTALL)
+    assert len(inventories) == 1
+    expected = yaml.safe_load((root / "docs/examples/assets/ridge.yaml").read_text())
+    assert yaml.safe_load(inventories[0]) == expected
 
 
 def test_csv_walkthrough_assets(tmp_path: Path) -> None:
