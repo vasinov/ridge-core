@@ -1,6 +1,7 @@
 # Ridge
 
 [![Tests](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml)
+[![Documentation](https://github.com/vasinov/ridge-core/actions/workflows/docs.yml/badge.svg?branch=main)](https://vasinov.github.io/ridge-core/)
 
 Ridge lets AI agents discover resources, run commands, and copy data across
 local directories, existing Docker containers, SSH hosts, and S3—through one
