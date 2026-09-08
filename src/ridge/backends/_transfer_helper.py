@@ -286,6 +286,7 @@ def stage_file(root, request):
         metadata = {
             "target": path_text,
             "kind": "file",
+            "phase": "staged",
             "created_parents": created,
             "bytes_copied": bytes_copied,
             "entries_copied": 1,
@@ -367,6 +368,7 @@ def stage_tree(root, request):
         metadata = {
             "target": path_text,
             "kind": "tree",
+            "phase": "staged",
             "created_parents": created,
             "bytes_copied": bytes_copied,
             "entries_copied": entries_copied,
@@ -413,9 +415,27 @@ def load_metadata(stage):
     return value
 
 
+def record_phase(stage, metadata, phase):
+    metadata["phase"] = phase
+    temporary = stage / (METADATA_NAME + ".tmp")
+    temporary.write_text(json.dumps(metadata, separators=(",", ":")))
+    temporary.replace(stage / METADATA_NAME)
+
+
+def recovery_detail(stage, metadata):
+    return (
+        "publication state " + str(metadata.get("phase", "unknown"))
+        + "; inspect destination " + str(metadata["target"])
+        + "; staging path: " + str(stage)
+        + "; previous destination, if retained: " + str(stage / "replaced")
+    )
+
+
 def commit(root, request):
     stage = stage_from_token(root, request["token"])
     metadata = load_metadata(stage)
+    if metadata.get("phase") != "staged":
+        fail("transfer", "publication cannot be retried; " + recovery_detail(stage, metadata))
     path_text = metadata["target"]
     target = leaf_path(root, path_text)
     payload = stage / "payload"
@@ -434,23 +454,43 @@ def commit(root, request):
             fail("transfer", "staged transfer payload is invalid")
         if payload_kind == "tree" and not payload.is_dir():
             fail("transfer", "staged transfer payload is invalid")
+        # Record intent before moving user data. Abort must preserve staging if
+        # the helper dies or loses its acknowledgement during publication.
+        record_phase(stage, metadata, "publishing")
         if exists:
             os.rename(target, replaced)
         try:
             os.rename(payload, target)
-        except BaseException:
-            if exists:
-                os.rename(replaced, target)
-            raise
+        except OSError as publication_error:
+            detail = "cannot publish destination " + path_text + ": " + str(publication_error)
+            phase = "rolled_back"
+            try:
+                if exists:
+                    os.rename(replaced, target)
+            except OSError as rollback_error:
+                phase = "rollback_failed"
+                detail += "; rollback also failed: " + str(rollback_error)
+            try:
+                record_phase(stage, metadata, phase)
+            except OSError as metadata_error:
+                detail += "; cannot record recovery phase: " + str(metadata_error)
+            fail("transfer", detail + "; " + recovery_detail(stage, metadata))
+        record_phase(stage, metadata, "published")
         remove_tree(stage)
     except OSError as error:
-        fail("transfer", "cannot publish destination " + path_text + ": " + str(error))
+        fail("transfer", "destination commit failed: " + str(error)
+             + "; " + recovery_detail(stage, metadata))
     reply({"ok": True})
 
 
 def abort(root, request):
     stage = stage_from_token(root, request["token"])
     metadata = load_metadata(stage)
+    if metadata.get("phase") not in ("staged", "rolled_back"):
+        fail("transfer", "automatic cleanup refused; " + recovery_detail(stage, metadata))
+    # A backup is user data even if phase metadata is incomplete or inconsistent.
+    if (stage / "replaced").exists() or (stage / "replaced").is_symlink():
+        fail("transfer", "automatic cleanup refused; " + recovery_detail(stage, metadata))
     created = metadata.get("created_parents", [])
     try:
         remove_tree(stage)

@@ -1,4 +1,6 @@
+from hashlib import sha256
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -8,6 +10,42 @@ from ridge.backends.ssh import SshResource
 from ridge.config import load_configuration, load_registry
 from ridge.errors import ConfigurationError
 from ridge.model import Operation
+
+
+def test_fingerprint_mismatch_precedes_parsing_and_provider_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_bytes(b"not even valid yaml: [")
+    discover = Mock(side_effect=AssertionError("provider code must not run"))
+    monkeypatch.setattr("ridge.config.default_provider_registry", discover)
+    with pytest.raises(ConfigurationError, match="configuration changed after submission"):
+        load_configuration(config, expected_fingerprint=sha256(b"original").hexdigest())
+    discover.assert_not_called()
+
+
+def test_configuration_parses_only_fingerprinted_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / "ridge.yaml"
+    original = b"resources: {original: {provider: local, root: .}}"
+    config.write_bytes(original)
+    read_bytes = Path.read_bytes
+    reads = 0
+
+    def swap_after_read(path: Path) -> bytes:
+        nonlocal reads
+        content = read_bytes(path)
+        if path == config:
+            reads += 1
+            path.write_bytes(b"resources: {replacement: {provider: local, root: .}}")
+        return content
+
+    monkeypatch.setattr(Path, "read_bytes", swap_after_read)
+    loaded = load_configuration(config, expected_fingerprint=sha256(original).hexdigest())
+    assert loaded.registry.names() == ("original",)
+    assert loaded.fingerprint == sha256(original).hexdigest()
+    assert reads == 1
 
 
 def test_portable_example_includes_shared_coordination_state(tmp_path: Path) -> None:

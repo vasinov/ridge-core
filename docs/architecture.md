@@ -86,8 +86,8 @@ changing Ridge core.
   its transport, configuration, inspection, and availability behavior. This is
   the internal transport seam beneath the public capability and provider API.
 - Cross-resource copy is a coordinator operation over two resource locations,
-  not a capability attributed to either endpoint. Files and directory trees
-  stream through Ridge as an uncompressed tar stream; the standard library owns
+  not a capability attributed to either endpoint. Files stream as raw bytes;
+  directory trees use an uncompressed tar stream. The standard library owns
   archive framing while Ridge owns rooted-path, member, source-snapshot,
   staging, cancellation, and publication policy.
 - Copy destinations are exact and missing ancestors are created automatically.
@@ -95,7 +95,14 @@ changing Ridge core.
   existing tree rather than merging with it, so destination-only entries are
   removed. File/tree type mismatches and special-file destinations fail. Content
   is staged beside filesystem destinations before replacement, with rollback
-  attempted if publication fails.
+  attempted if publication fails. The helper records publication intent before
+  moving user data. Abort removes only disposable stages or acknowledged rolled-back
+  stages with no retained backup. Failed rollback, unknown phase, and unconfirmed
+  publication retain recovery artifacts; published destinations are never rolled
+  back by cleanup. Commit is one-attempt and requires a valid acknowledgement.
+  Transport uncertainty prevents concurrent abort against a possibly live commit.
+  Phase metadata supports manual recovery, not power-loss transactional durability.
+  The [copying guide](guides/copying.md) owns recovery instructions.
 - Tree copy accepts regular files, directories, and relative symbolic links
   whose resolved targets exist inside the copied tree. It rejects absolute,
   broken, escaping, and top-level links, plus hard links and special files.
@@ -263,9 +270,10 @@ attempt. The supervisor atomically claims the row within 30 seconds while holdin
 a per-job advisory lock. Observers reconcile expired unclaimed submissions; late
 or duplicate supervisors cannot execute them. There is no recovery daemon or retry.
 A separate worker receives permission to run through an inherited pipe; EOF before
-handoff means no execution. The worker reloads the original configuration and refuses to run
-if its byte fingerprint changed after submission. It rechecks the underlying
-operation grants before invoking a capability. Ambient credentials, provider
+handoff means no execution. The worker fingerprints a single read of the original
+configuration before parsing or provider construction, refuses changed bytes,
+and constructs its service from that same checked document. It rechecks the
+underlying operation grants before invoking a capability. Ambient credentials, provider
 code, and downstream state can still change between submission and execution.
 
 Write content is snapshotted into the job directory before submission returns.
@@ -311,8 +319,11 @@ Workers publish an atomic outcome file; only the supervisor publishes terminal
 job state after group shutdown. Completion and cancellation intent serialize in
 SQLite: terminal outcomes are immutable, and cancellation that wins before
 completion is recorded takes precedence. Pending cancellation survives client
-disconnect. Cleanup failures remain visible in `error`; uncertain termination
-retains staged payloads. Supervisor loss does not trigger speculative signalling.
+disconnect. Worker errors retain their primary message and bounded secondary
+exception notes through CLI/MCP serialization and job outcomes. Cancellation
+preserves reported worker diagnostics after shutdown. Cleanup failures remain
+visible in `error`; uncertain termination retains staged payloads. Supervisor
+loss does not trigger speculative signalling.
 There is no claim of rollback, remote termination, or containment of deliberately
 detached processes. See [job limitations](guides/jobs.md#current-limitations).
 

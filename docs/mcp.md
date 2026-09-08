@@ -48,6 +48,10 @@ Data and execution results are bounded:
 - stdout and stderr are independently limited to 32 KiB while retaining their
   full byte counts.
 
+Ridge formats primary failures and secondary recovery notes into at most 16 KiB
+of UTF-8 diagnostic text, before frontend/protocol prefixes, with explicit truncation. See
+[copy recovery](guides/copying.md) for retained staging and unconfirmed publication.
+
 Resource discovery grows with the configured inventory. `list_jobs(limit=50,
 cursor=None)` returns authorized summaries in a `jobs`/`next_cursor` page,
 newest first; limits are 1–200. Summaries omit results, errors, and cancellation

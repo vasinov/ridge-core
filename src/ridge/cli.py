@@ -10,7 +10,7 @@ from typing import Annotated, ParamSpec, TypeVar, cast
 import typer
 
 from ridge.application import RidgeService
-from ridge.errors import ExecutionTimeoutError, RidgeError
+from ridge.errors import ExecutionTimeoutError, RidgeError, format_error
 from ridge.model import JobScope, Operation
 
 app = typer.Typer(
@@ -39,11 +39,15 @@ def _handle_errors(function: Callable[_P, _R]) -> Callable[_P, _R]:
         try:
             return function(*args, **kwargs)
         except ExecutionTimeoutError as exc:
-            typer.echo(f"ridge: {exc}", err=True)
+            typer.echo(f"ridge: {format_error(exc)}", err=True)
             raise typer.Exit(code=124) from exc
         except (RidgeError, OSError, ValueError) as exc:
-            typer.echo(f"ridge: {exc}", err=True)
+            typer.echo(f"ridge: {format_error(exc)}", err=True)
             raise typer.Exit(code=2) from exc
+        except KeyboardInterrupt as exc:
+            if getattr(exc, "__notes__", ()):
+                typer.echo(f"ridge: interrupted\n{format_error(exc)}", err=True)
+            raise
 
     return wrapped
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import BinaryIO, Literal, Never, cast
 
 from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Authorizer
-from ridge.config import load_configuration
+from ridge.config import LoadedConfiguration, load_configuration
 from ridge.coordination import Coordination
 from ridge.errors import AuthorizationDeniedError, JobsUnavailableError, UnsupportedOperationError
 from ridge.jobs import JobManager
@@ -73,7 +73,10 @@ class RidgeService:
 
     @classmethod
     def from_config(cls, config_path: str | Path) -> RidgeService:
-        loaded = load_configuration(config_path)
+        return cls._from_configuration(load_configuration(config_path))
+
+    @classmethod
+    def _from_configuration(cls, loaded: LoadedConfiguration) -> RidgeService:
         if loaded.path is None or loaded.fingerprint is None or loaded.state_directory is None:
             return cls(loaded.registry, loaded.authorization)
         return cls(

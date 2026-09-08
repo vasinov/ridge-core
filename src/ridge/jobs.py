@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from ridge.coordination import Coordination
-from ridge.errors import JobConflictError, JobNotFoundError, RidgeError
+from ridge.errors import JobConflictError, JobNotFoundError, RidgeError, format_error
 from ridge.model import Job, JobKind, JobLog, JobPage, JobScope, JobStatus, JobSummary, Operation
 
 _TERMINAL = {
@@ -526,12 +526,13 @@ def _work(directory: Path, job_id: str, gate: int) -> int:
             raise _Cancelled
         stdout_path.touch(mode=0o600)
         stderr_path.touch(mode=0o600)
-        fingerprint = hashlib.sha256(manager.config_path.read_bytes()).hexdigest()
-        if fingerprint != manager.config_fingerprint:
-            raise RidgeError("configuration changed after submission")
         from ridge.application import RidgeService
+        from ridge.config import load_configuration
 
-        service = RidgeService.from_config(manager.config_path)
+        loaded = load_configuration(
+            manager.config_path, expected_fingerprint=manager.config_fingerprint
+        )
+        service = RidgeService._from_configuration(loaded)  # pyright: ignore[reportPrivateUsage]
         kind = JobKind(row["kind"])
         if kind is JobKind.EXECUTE:
             argv = cast(list[str], request["argv"])
@@ -561,10 +562,12 @@ def _work(directory: Path, job_id: str, gate: int) -> int:
             result = service.copy(cast(str, request["source"]), cast(str, request["destination"]))
             result_value = asdict(result)
         outcome = {"status": JobStatus.SUCCEEDED.value, "result": result_value}
-    except _Cancelled:
+    except _Cancelled as exc:
         outcome = {"status": JobStatus.CANCELLED.value}
+        if getattr(exc, "__notes__", ()):
+            outcome["error"] = format_error(exc)
     except Exception as exc:  # noqa: BLE001 - persist arbitrary provider failures for observers
-        message = f"{type(exc).__name__}: {exc}"
+        message = f"{type(exc).__name__}: {format_error(exc)}"
         with suppress(OSError), stderr_path.open("ab") as handle:
             handle.write((message + "\n").encode(errors="replace"))
         outcome = {"status": JobStatus.FAILED.value, "error": message}
@@ -702,14 +705,25 @@ def _run(directory: Path, job_id: str) -> int:
                 _, row = _load_manager(directory, job_id)
                 if row["cancellation_requested"]:
                     stopped = worker_stopped or _stop_group(process)
+                    diagnostic: str | None = None
+                    if outcome_path.exists():
+                        try:
+                            cancelled_outcome = cast(
+                                dict[str, object], json.loads(outcome_path.read_text())
+                            )
+                            value = cancelled_outcome.get("error")
+                            if isinstance(value, str):
+                                diagnostic = value
+                        except (OSError, ValueError):
+                            diagnostic = "worker recovery diagnostics could not be read"
+                    if not stopped:
+                        detail = "cancellation termination unverified; staged payload retained if present"
+                        diagnostic = f"{detail}; {diagnostic}" if diagnostic else detail
                     manager.finish(
                         job_id,
                         JobStatus.CANCELLED if stopped else JobStatus.LOST,
                         cleanup=stopped,
-                        error=None
-                        if stopped
-                        else "cancellation termination unverified; "
-                        "staged payload retained if present",
+                        error=diagnostic,
                     )
                     return 0 if stopped else 1
                 if outcome_path.exists():

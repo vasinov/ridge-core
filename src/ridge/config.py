@@ -51,10 +51,14 @@ def load_configuration(
     config_path: str | Path,
     *,
     providers: ResourceProviderRegistry | None = None,
+    expected_fingerprint: str | None = None,
 ) -> LoadedConfiguration:
     path = Path(config_path).expanduser().resolve()
     try:
         raw_bytes = path.read_bytes()
+        fingerprint = sha256(raw_bytes).hexdigest()
+        if expected_fingerprint is not None and fingerprint != expected_fingerprint:
+            raise ConfigurationError("configuration changed after submission")
         raw_document: Any = yaml.safe_load(raw_bytes.decode("utf-8"))
     except FileNotFoundError as exc:
         raise ConfigurationError(f"configuration file does not exist: {path}") from exc
@@ -113,7 +117,7 @@ def load_configuration(
         registry,
         authorization,
         path,
-        sha256(raw_bytes).hexdigest(),
+        fingerprint,
         state_directory,
         lock_keys,
     )

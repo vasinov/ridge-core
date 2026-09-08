@@ -5,7 +5,7 @@ from __future__ import annotations
 import posixpath
 import time
 
-from ridge.errors import InvalidPathError, UnsupportedOperationError
+from ridge.errors import InvalidPathError, UnsupportedOperationError, format_error
 from ridge.model import CopyRequest, CopyResult, ResourceLocation
 from ridge.registry import ResourceRegistry
 from ridge.resource import (
@@ -74,6 +74,10 @@ def copy(registry: ResourceRegistry, request: CopyRequest) -> CopyResult:
             bytes_copied = entries_copied = 0
             destination_error = exc
         if source_error is not None:
+            if destination_error is not None:
+                source_error.add_note(
+                    f"destination staging also failed: {format_error(destination_error)}"
+                )
             raise source_error
         if destination_error is not None:
             raise destination_error
@@ -88,15 +92,17 @@ def copy(registry: ResourceRegistry, request: CopyRequest) -> CopyResult:
             try:
                 source.cancel()
             except Exception as cleanup_error:  # noqa: BLE001 - preserve primary failure
-                error.add_note(f"source cleanup also failed: {cleanup_error}")
+                error.add_note(f"source cleanup also failed: {format_error(cleanup_error)}")
         if destination is not None:
             if not destination_finished:
                 try:
                     destination.cancel()
                 except Exception as cleanup_error:  # noqa: BLE001 - preserve primary failure
-                    error.add_note(f"destination cancellation also failed: {cleanup_error}")
+                    error.add_note(
+                        f"destination cancellation also failed: {format_error(cleanup_error)}"
+                    )
             try:
                 destination.abort()
             except Exception as cleanup_error:  # noqa: BLE001 - do not mask the primary failure
-                error.add_note(f"destination cleanup also failed: {cleanup_error}")
+                error.add_note(f"destination cleanup also failed: {format_error(cleanup_error)}")
         raise

@@ -56,6 +56,14 @@ against disposable roots, prefixes, or test resources.
 Providers are trusted in-process Python. They execute with Ridge's ambient
 authority and are not sandboxed by Ridge request authorization.
 
+Transfer `finish()` completes staging; only `commit()` publishes the destination,
+after both endpoints have finished successfully. `abort()` must not delete a
+previous destination retained for recovery, or undo a published result. An
+unconfirmed commit must preserve available recovery artifacts rather than retrying
+publication. Report the primary failure and attach secondary cleanup/recovery
+details as exception notes; CLI/MCP and jobs preserve bounded diagnostic text.
+See [copy recovery](guides/copying.md) for the built-in filesystem contract.
+
 Built-in provider names cannot be shadowed. Providers extend implementations,
 not the generic operation vocabulary: they cannot redefine an operation or add
 CLI commands or MCP tools dynamically. New operations require a core design

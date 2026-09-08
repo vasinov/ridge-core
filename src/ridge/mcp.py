@@ -15,7 +15,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict
 
 from ridge.application import RidgeService
-from ridge.errors import RidgeError
+from ridge.errors import RidgeError, format_error
 from ridge.model import CopyResult as DomainCopyResult
 from ridge.model import (
     FileStat,
@@ -227,7 +227,7 @@ def _tool_errors(function: Callable[_P, _R]) -> Callable[_P, _R]:
         except ToolError:
             raise
         except (RidgeError, OSError, ValueError) as exc:
-            raise ToolError(str(exc)) from exc
+            raise ToolError(format_error(exc)) from exc
 
     return wrapped
 

@@ -44,11 +44,13 @@ reports a Ridge/provider failure (including an execution timeout); `lost` means
 the startup handoff expired, the supervisor disappeared, or local termination
 could not be verified. Inspect `error`; `lost` never proves work stopped.
 
-The supervisor reloads the original configuration and rejects the attempt if
-its byte fingerprint changed, even for a formatting-only edit. It rechecks the
-underlying grants. Credentials, installed provider code, and downstream data are
-not snapshotted. Background execution rejects explicitly supplied environment
-values; it still inherits ambient credentials and environment.
+The worker reads the original configuration once and checks those exact bytes
+against the submission fingerprint before parsing or constructing providers.
+A mismatch rejects the attempt, even for a formatting-only edit. Execution uses
+that checked configuration and rechecks its underlying grants; later file edits
+do not replace it within the attempt. Credentials, installed provider code, and
+downstream data are not snapshotted. Background execution rejects explicitly
+supplied environment values; it still inherits ambient credentials and environment.
 
 ## Startup and cancellation
 
@@ -129,8 +131,12 @@ indefinitely under `state.directory` (default `.ridge` beside the config).
 There is no automatic expiration, pruning, or deletion command. Staged write
 payloads are removed after verified shutdown or a fenced, unstarted attempt.
 Cleanup errors appear in the job's `error` field without replacing its operation
-result; inspect that field even for a successful job. When termination is uncertain,
-payloads are retained rather than deleted underneath a possible live worker.
+result; inspect that field even for a successful job. Worker failures retain bounded
+secondary diagnostics, including copy recovery paths. Cancellation preserves those
+diagnostics when the worker reports them before shutdown; forced termination may
+prevent a report. See [copy recovery](copying.md) before removing retained staging.
+When termination is uncertain, payloads are retained rather than deleted
+underneath a possible live worker.
 A crash before a submission is committed can leave an unreferenced job directory.
 Copy requests reference their source rather than staging its bytes
 at submission, so subsequent source changes can affect the attempt.

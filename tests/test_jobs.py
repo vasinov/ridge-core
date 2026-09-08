@@ -3,6 +3,7 @@ from __future__ import annotations
 # These tests deliberately exercise internal crash and ownership boundaries.
 # pyright: reportPrivateUsage=false
 import fcntl
+import json
 import os
 import signal
 import subprocess
@@ -231,6 +232,110 @@ def _expire(manager: JobManager, job_id: str) -> None:
             "UPDATE jobs SET submitted_at = ? WHERE id = ?",
             ((datetime.now(UTC) - timedelta(seconds=31)).isoformat(), job_id),
         )
+
+
+def _run_worker(manager: JobManager, job_id: str) -> dict[str, object]:
+    from ridge._job_process import current_job, in_job_worker
+
+    read_gate, write_gate = os.pipe()
+    os.write(write_gate, b"1")
+    os.close(write_gate)
+    handler = signal.getsignal(signal.SIGTERM)
+    old_job = current_job.get()
+    old_worker = in_job_worker.get()
+    try:
+        assert jobs._work(manager.directory, job_id, read_gate) == 0
+    finally:
+        signal.signal(signal.SIGTERM, handler)
+        current_job.set(old_job)
+        in_job_worker.set(old_worker)
+    return json.loads((manager.directory / job_id / "outcome.json").read_text())
+
+
+def test_worker_executes_the_exact_configuration_bytes_it_fingerprinted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    (tmp_path / "replacement").mkdir()
+    read_bytes = Path.read_bytes
+    reads = 0
+
+    def swap_after_read(path: Path) -> bytes:
+        nonlocal reads
+        content = read_bytes(path)
+        if path == manager.config_path:
+            reads += 1
+            path.write_bytes(content.replace(b"root: .", b"root: replacement"))
+        return content
+
+    monkeypatch.setattr(Path, "read_bytes", swap_after_read)
+    outcome = _run_worker(manager, job_id)
+    assert outcome["status"] == "succeeded"
+    assert reads == 1
+    assert (tmp_path / "output").read_bytes() == b"staged"
+    assert not (tmp_path / "replacement/output").exists()
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_worker_persists_cleanup_notes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancelled: bool
+) -> None:
+    from ridge.errors import TransferError
+
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    error = jobs._Cancelled() if cancelled else TransferError("publication failed")
+    error.add_note("retained staging: target:.ridge-transfer-fixture; rollback failed")
+    monkeypatch.setattr(RidgeService, "write_data", Mock(side_effect=error))
+    outcome = _run_worker(manager, job_id)
+    assert outcome["status"] == ("cancelled" if cancelled else "failed")
+    assert "retained staging: target:.ridge-transfer-fixture" in str(outcome["error"])
+    assert "rollback failed" in str(outcome["error"])
+
+
+def test_supervisor_keeps_worker_diagnostics_when_cancellation_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    launch = subprocess.Popen
+    worker_script = r"""
+import sys
+from ridge import jobs
+from ridge.application import RidgeService
+
+def cancelled_write(self, *args, **kwargs):
+    error = jobs._Cancelled()
+    error.add_note("destination cleanup failed; retained target:.ridge-transfer-cancel/replaced")
+    raise error
+
+RidgeService.write_data = cancelled_write
+raise SystemExit(jobs._work(jobs.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])))
+"""
+
+    def launch_worker(argv: tuple[str, ...], **kwargs: object) -> subprocess.Popen[bytes]:
+        if len(argv) > 3 and argv[1:4] == ("-m", "ridge.jobs", "work"):
+            argv = (sys.executable, "-c", worker_script, *argv[4:])
+        return launch(argv, **kwargs)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(jobs.subprocess, "Popen", launch_worker)
+    load_manager = jobs._load_manager
+
+    def cancel_after_worker_report(
+        directory: Path, identity: str
+    ) -> tuple[JobManager, jobs.sqlite3.Row]:
+        if (directory / identity / "outcome.json").exists():
+            with manager.connect() as connection:
+                connection.execute(
+                    "UPDATE jobs SET cancellation_requested = 1 WHERE id = ?", (identity,)
+                )
+        return load_manager(directory, identity)
+
+    monkeypatch.setattr(jobs, "_load_manager", cancel_after_worker_report)
+    assert jobs._run(manager.directory, job_id) == 0
+    inspected = manager.get(job_id)
+    assert inspected.status is JobStatus.CANCELLED
+    assert "target:.ridge-transfer-cancel/replaced" in str(inspected.error)
+    assert not (tmp_path / "output").exists()
+    assert not (manager.directory / job_id / "payload.bin").exists()
 
 
 def test_expired_start_is_lost_and_late_supervisor_cannot_write(

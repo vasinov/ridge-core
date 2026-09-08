@@ -46,7 +46,9 @@ def _failure(resource_name: str, return_code: int, stderr: bytes) -> RidgeError:
         failure = cast(dict[str, object], value)
         error = _TRANSFER_ERRORS.get(str(failure.get("error")))
         if error is not None:
-            return error(str(failure.get("message") or "transfer failed"))
+            return error(
+                f"resource {resource_name!r}: {failure.get('message') or 'transfer failed'}"
+            )
     message = detail or f"transfer process exited with status {return_code}"
     return ResourceUnavailableError(f"resource {resource_name!r}: {message}")
 
@@ -118,6 +120,8 @@ class ProcessTransferDestination(_Process, TransferDestination):
         self._stderr = cast(BinaryIO, process.stderr)
         self._invoke_control = invoke_control
         self._token: str | None = None
+        self._commit_attempted = False
+        self._commit_uncertain = False
 
     def write(self, content: bytes) -> None:
         if self._stdin is None:
@@ -156,14 +160,36 @@ class ProcessTransferDestination(_Process, TransferDestination):
         return bytes_copied, entries_copied
 
     def commit(self) -> None:
+        if self._commit_attempted:
+            raise TransferError("publication cannot be retried")
         if self._token is None:
             raise TransferError("transfer destination has not finished staging")
-        self._invoke_control("commit", {"token": self._token})
+        self._commit_attempted = True
+        try:
+            self._invoke_control("commit", {"token": self._token})
+        except BaseException as error:
+            # A helper-reported failure has completed. A broken transport or
+            # interrupted caller cannot establish whether publication is ongoing.
+            self._commit_uncertain = isinstance(error, ResourceUnavailableError) or not isinstance(
+                error, RidgeError
+            )
+            if self._commit_uncertain:
+                error.add_note(
+                    f"resource {self.resource_name!r}: publication outcome unconfirmed; "
+                    f"inspect destination and any remaining staging at {self._token}; "
+                    "automatic cleanup was not attempted"
+                )
+            raise
         self._token = None
 
     def abort(self) -> None:
         if self._token is None:
             return
+        if self._commit_uncertain:
+            raise TransferError(
+                f"resource {self.resource_name!r}: cleanup refused after unconfirmed publication; "
+                f"inspect any remaining staging at {self._token}"
+            )
         token = self._token
         self._invoke_control("abort", {"token": token})
         self._token = None
@@ -219,6 +245,17 @@ class ProcessTransferOperations:
             ) from exc
         if completed.returncode:
             raise _failure(self._resource_name, completed.returncode, completed.stderr)
+        try:
+            response = cast(object, json.loads(completed.stdout))
+        except (UnicodeError, json.JSONDecodeError):
+            response = None
+        if (
+            not isinstance(response, dict)
+            or cast(dict[str, object], response).get("ok") is not True
+        ):
+            raise ResourceUnavailableError(
+                f"resource {self._resource_name!r}: invalid {operation} acknowledgement"
+            )
 
     def open_source(self, path: str, kind: TransferPayloadKind) -> ProcessTransferSource:
         process = self._start("export-file" if kind == "file" else "export-tree")

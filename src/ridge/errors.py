@@ -1,6 +1,28 @@
 """Stable errors surfaced by Ridge backends and frontends."""
 
 
+def _bounded_text(text: str, limit: int) -> str:
+    encoded = text.encode("utf-8", errors="replace")
+    if len(encoded) <= limit:
+        return text
+    marker = "... [truncated]"
+    return encoded[: limit - len(marker)].decode("utf-8", errors="ignore") + marker
+
+
+def format_error(error: BaseException) -> str:
+    """Render primary failure and secondary notes within 16 KiB of UTF-8 text."""
+    primary = _bounded_text(str(error), 8 * 1024)
+    notes = getattr(error, "__notes__", ())
+    if not notes:
+        return primary
+    # Bound each note before joining and reserve a separate budget so a large
+    # provider error cannot crowd out all recovery evidence.
+    details = "\n".join(_bounded_text(str(note), 8191) for note in notes[:8])
+    if len(notes) > 8:
+        details += "\n... [additional notes omitted]"
+    return primary + "\n" + _bounded_text(details, 8191)
+
+
 class RidgeError(Exception):
     """Base class for expected Ridge failures."""
 

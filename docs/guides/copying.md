@@ -32,10 +32,25 @@ including removal of destination-only entries. It is not an append-only grant.
 
 Filesystem destinations are published only after both endpoints finish and the
 source still matches its initial snapshot. Failed publication attempts rollback.
-Ordinary failure/cancellation cleanup removes staging and still-empty ancestors
-created by the copy when possible; abrupt process termination or cleanup errors
-can leave artifacts. S3 multipart cleanup attempts to abort unfinished uploads.
-See [job cancellation limits](jobs.md#current-limitations).
+If rollback fails, Ridge retains staging and the previous destination at
+`STAGING/replaced` for manual recovery. Publication/recovery errors identify the
+resource, known publication phase, and recovery paths. A failure after publication leaves the
+new destination in place; it does not roll back an already-published result.
+
+An interrupted or missing commit acknowledgement leaves publication unconfirmed.
+Ridge does not retry publication or automatically clean up that attempt. Inspect
+the destination and any remaining staging before retrying the copy or removing
+artifacts; a reported path may already be gone if publication and cleanup finished
+before the response was lost. There is no automatic recovery or backup expiration.
+Follow [coordination recovery](coordination.md#inspecting-abandoned-work) for any
+uncertain claims; retained artifacts and operation ownership are separate concerns.
+
+Before publication, failure/cancellation cleanup attempts to remove disposable
+staging and still-empty ancestors created by the copy. Interrupted staging,
+abrupt process termination, or cleanup errors can leave artifacts. S3 multipart
+cleanup attempts to abort unfinished uploads. Secondary cleanup errors accompany
+the primary failure in CLI/MCP errors and background job inspection, with bounded
+diagnostics and explicit truncation. See [job cancellation limits](jobs.md#current-limitations).
 
 Copy has no arbitrary total size or wall-clock limit. Transport connection
 timeouts still apply. Streaming avoids a complete temporary payload on the Ridge
