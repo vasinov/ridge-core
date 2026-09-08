@@ -139,6 +139,7 @@ builds/tests, scientific computing, and media processing.
 
 ## Documentation
 
+Browse the [documentation website](https://vasinov.github.io/ridge-core/).
 The documentation source is in [`docs/`](docs/index.md):
 
 - [Getting started](docs/getting-started.md)
