@@ -4,6 +4,7 @@ The `ridge` command is a Typer frontend over the same application service used
 by MCP.
 
 ```text
+ridge --config PATH config validate [--json]
 ridge resources
 ridge inspect RESOURCE
 ridge exec RESOURCE -- ARGV...
@@ -26,6 +27,13 @@ ridge locks force-release OPERATION_ID --reason TEXT
 ```
 
 Use `ridge COMMAND --help` for frontend options and output details.
+
+`config validate` uses the runtime loader without constructing the application
+service, probing targets, or creating Ridge state. It reports resolved config/state
+paths and effective grants; exit `0` means valid and `2` reports the first error.
+`--json` emits either a success summary or `{"valid": false, "error": "..."}` on
+stdout. See [configuration validation](configuration.md#validate-an-inventory)
+for the output contract, trusted-provider boundary, and sensitive diagnostics.
 
 Configured resource operations automatically claim their resources and exit 2 on
 contention. `locks acquire` returns JSON including a session `id` and secret `token`.

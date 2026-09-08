@@ -46,6 +46,9 @@ failures while loading the inventory, regardless of permissions. The capability
 collection validates its composition and required protocol members when constructed.
 Loading does not invoke inspection or prove method signatures, return values, or
 backend behavior; use conformance and acceptance tests for those contracts.
+`ridge config validate` uses this same construction path. Keep constructors
+focused on configuration and defer backend interactions to capability methods;
+provider code and provider-written diagnostics are not sandboxed or redacted.
 
 The entry-point name is the YAML `provider` and must match the returned
 resource's `provider_name`. Compose at most one of `filesystem` and `storage`

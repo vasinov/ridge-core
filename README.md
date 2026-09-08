@@ -89,6 +89,10 @@ Change the worker's provider configuration to use Docker or SSH while keeping
 the resource name and agent workflow.
 
 Ridge loads `./ridge.yaml` by default; use `--config PATH` for another inventory.
+Run `ridge config validate` to check it and review effective grants without
+running resource operations. For agent-assisted configuration, use the
+[ridge-setup skill](skills/ridge-setup/SKILL.md) with installed Ridge; see
+[setup and validation](https://vasinov.github.io/ridge-core/configuration/#agent-assisted-setup).
 See [Configuration](https://vasinov.github.io/ridge-core/configuration/) for options
 and [more examples](https://vasinov.github.io/ridge-core/examples/) for ML experiments,
 builds, scientific computing, and media processing.

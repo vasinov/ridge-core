@@ -3,6 +3,9 @@
 The Python package remains `ridge` even though the distribution is named
 `ridge-core`.
 
+For inventory validation without application/state initialization, use the
+[configuration validation CLI](configuration.md#validate-an-inventory).
+
 Application code should begin with `RidgeService`:
 
 ```python

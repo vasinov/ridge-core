@@ -59,6 +59,11 @@ changing Ridge core.
   There is no built-in `filesystem` provider.
 - Configuration roots are resolved relative to the configuration file so the
   same configuration is independent of the invocation directory.
+- CLI configuration validation calls the authoritative loader directly, not the
+  application service. It summarizes loaded policy without property inspection,
+  resource operations, or Ridge state initialization. Provider imports/construction
+  remain trusted code; validation is not a connectivity or safety audit. The
+  [configuration reference](configuration.md#validate-an-inventory) owns its output.
 - Reads and writes are binary-safe. Frontends decide how to encode or bound
   content for their transport. Built-in bounded reads request at most the limit
   plus one detection byte from their streams and reject overflow, independently

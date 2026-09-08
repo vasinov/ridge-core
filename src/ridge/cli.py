@@ -10,6 +10,7 @@ from typing import Annotated, ParamSpec, TypeVar, cast
 import typer
 
 from ridge.application import RidgeService
+from ridge.config import load_configuration
 from ridge.errors import ExecutionTimeoutError, RidgeError, format_error
 from ridge.model import JobScope, Operation
 
@@ -22,6 +23,10 @@ jobs_app = typer.Typer(no_args_is_help=True, help="Observe and cancel durable ba
 app.add_typer(jobs_app, name="jobs")
 locks_app = typer.Typer(no_args_is_help=True, help="Coordinate resource access across callers.")
 app.add_typer(locks_app, name="locks")
+config_app = typer.Typer(
+    no_args_is_help=True, help="Check the resource inventory without running it."
+)
+app.add_typer(config_app, name="config")
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -79,6 +84,66 @@ def configure(
 def _service(ctx: typer.Context) -> RidgeService:
     state = cast(_AppState, ctx.obj)
     return RidgeService.from_config(state.config).with_lock(state.lock_token)
+
+
+@config_app.command("validate")
+def config_validate(
+    ctx: typer.Context,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit one JSON result on stdout, including validation errors."),
+    ] = False,
+) -> None:
+    """Validate with the runtime loader; no connectivity probes or Ridge state creation.
+
+    Exit 0 for valid configuration or 2 for the first error. Provider constructors
+    are trusted code. Diagnostics may contain sensitive paths or input values.
+    """
+    state = cast(_AppState, ctx.obj)
+    try:
+        loaded = load_configuration(state.config)
+    except (RidgeError, OSError, ValueError) as exc:
+        message = format_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"valid": False, "error": message}))
+        else:
+            typer.echo(f"ridge: {message}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    # Do not use service construction or inspect_properties: neither is needed
+    # to summarize the loaded policy, and they may initialize state or probe targets.
+    resources = [
+        {
+            "name": name,
+            "provider": loaded.registry.get(name).provider_name,
+            "lock_key": loaded.lock_keys[name],
+            "allowed_operations": [
+                operation.value
+                for operation in loaded.registry.get(name).capabilities.operations
+                if loaded.authorization.allows(name, operation)
+            ],
+        }
+        for name in loaded.registry.names()
+    ]
+    permission_mode = "unrestricted" if loaded.authorization.unrestricted_mode else "exact"
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "valid": True,
+                    "config": str(loaded.path),
+                    "state_directory": str(loaded.state_directory),
+                    "permission_mode": permission_mode,
+                    "resources": resources,
+                }
+            )
+        )
+    else:
+        typer.echo(f"Valid configuration: {loaded.path}")
+        typer.echo(f"State directory: {loaded.state_directory} (not initialized)")
+        typer.echo(f"Permissions: {permission_mode}")
+        for resource in resources:
+            typer.echo(json.dumps(resource))
 
 
 @locks_app.command("acquire")

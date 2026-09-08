@@ -1,3 +1,5 @@
+# Check this inventory with: ridge --config ridge.example.yaml config validate
+# Validation checks the loader, not backend connectivity or safe state placement.
 # Optional; defaults to .ridge beside this YAML file. Keep durable state outside
 # resource trees that agents might copy, replace, or delete. This example uses root: .,
 # so it places state in a sibling directory. Choose a project-specific location;
