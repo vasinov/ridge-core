@@ -155,6 +155,38 @@ transfers alone do not prove failure cleanup.
   and the commit briefly. Never push or rewrite history without explicit user
   authorization; a commit does not authorize publication.
 
+### Parallel agents and worktrees
+
+- Use a dedicated Git worktree and task branch for each independent editing
+  task by default. Reuse the current worktree when it already belongs to the
+  task; read-only investigations do not require a separate worktree. An explicit
+  user request to work in a particular checkout takes precedence.
+- Before editing, inspect the current path, branch, worktree list, and working
+  tree status. Create new task worktrees from an identified committed base;
+  uncommitted work in another checkout is not included. Do not move, stash,
+  stage, or commit another agent's work, or switch its checkout's branch.
+- Run edits, checks, and commits in the task worktree. Verify that IDE tools
+  and interpreters target that worktree too; use explicit paths when needed.
+  Set up its own environment with the documented tools. Ignored files and
+  optional local context are not automatically copied; do not copy credentials
+  or rely on another worktree's mutable virtual environment.
+- Worktrees isolate working files and staging areas, not all resources: Git
+  refs are shared, and ports, services, external targets, and any shared local
+  notes still need coordination. Do not modify or delete another task's branch
+  or worktree. Read-only helpers may share a task worktree; concurrent editing
+  helpers require explicitly coordinated file ownership or separate worktrees.
+- Commit verified task-owned changes on the task branch. Report its branch,
+  worktree path, commit, checks, and integration status. Integrate completed
+  branches one at a time through a designated agent or maintainer, into a
+  checkout that is not in active use and has a clean working tree. Review the
+  combined behavior even when Git merges without conflicts, and run checks
+  appropriate to the integrated changes. Resolve mechanical conflicts within
+  the approved scope; bring unresolved behavioral decisions to the user.
+- Never automatically relocate an already-running agent. Retain a worktree
+  while it is in use or has unpreserved work; remove it only after verifying
+  its changes are safely preserved and no agent is using it. Do not force
+  cleanup. Existing push and history-rewrite restrictions still apply.
+
 ### Evidence-first collaboration
 
 - Treat contributor and user proposals as hypotheses, not instructions to
