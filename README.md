@@ -3,57 +3,69 @@
 [![Tests](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml)
 [![Documentation](https://github.com/vasinov/ridge-core/actions/workflows/docs.yml/badge.svg?branch=main)](https://vasinov.github.io/ridge-core/)
 
-Ridge lets AI agents discover resources, run commands, and copy data across
-local directories, existing Docker containers, SSH hosts, and S3—through one
-CLI or local MCP server. Agents use resource names instead of backend-specific
-transfer commands. Copies stream through Ridge without putting file contents
-in model context.
+Give your AI agents one way to work with local files, Docker containers, SSH
+hosts, and S3. Ridge exposes named resources through a CLI and a local MCP
+server, so agents can discover what is available, move data, and run programs
+without assembling backend-specific plumbing.
 
-Ridge also gives multiple agents a shared resource-locking protocol. An agent
-copying files, editing data, or running a command can exclude conflicting Ridge
-operations on the same resource. Multi-resource sessions protect a sequence of
-calls, and adopting Python/MCP hosts can renew them automatically. Callers must
-share local Ridge state and matching resource lock keys; this does not lock out
-direct access outside Ridge. See [multi-agent coordination](docs/guides/coordination.md).
+## From a request to a result
 
-Ridge is public-alpha software for one trusted operator with multiple cooperating
-agents. Exact operation grants control access through Ridge; OS and service
-permissions control downstream authority. See the [security model](docs/security.md)
-when choosing resources and grants.
+> Run the sales analysis from `inputs` on `worker`. Save the report in `reports`
+> and tell me the revenue by region.
 
-## Install
+With Ridge connected to an MCP-capable agent, a task like this becomes a short
+sequence of tool calls. Assume the three resources are configured, `inputs`
+contains `sales.csv` and `analyze.py`, and `worker` has Python:
 
-The distribution is named `ridge-core`; the Python package and command remain
-`ridge`. Install from a source checkout with Python 3.11 or newer on a POSIX host:
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install .
+```text
+list_resources()
+copy(source="inputs:sales.csv", destination="worker:sales.csv")
+copy(source="inputs:analyze.py", destination="worker:analyze.py")
+execute(resource="worker", argv=["python3", "analyze.py"], timeout_seconds=30)
+# After checking result.exit_code == 0:
+copy(source="worker:report.csv", destination="reports:report.csv")
+read_data(resource="reports", path="report.csv")
 ```
 
-These commands assume a POSIX shell at the checkout root. For development,
-use `uv sync` and `. .venv/bin/activate` instead.
+Illustrative MCP calls, with responses omitted. The agent checks supported and
+allowed operations before acting, then reads the small report to answer:
 
-## Five-minute example: a sales report
+> East: 100.00. West: 200.00. Report saved to `reports:report.csv`.
 
-From the checkout root with the environment active, copy a small CSV and
-standard-library analysis script to a named worker, run it, and retrieve a report:
+The worker can be local, Docker, or SSH—the tool calls stay the same. Copies
+stream through Ridge; input files do not need to pass through the conversation.
+See the [agent walkthrough](docs/examples/csv-report.md#with-an-agent) for the
+decision points and background-job variant.
+
+## Why Ridge?
+
+- **One workflow across backends.** Use `RESOURCE:PATH` locations instead of
+  stitching together filesystem, Docker, SSH, and cloud transfer commands.
+- **Keep artifacts out of model context.** Stream datasets, model files, and
+  reports between resources with bounded transfer memory; read back what matters.
+- **Give agents a shared way to coordinate.** Automatic resource locks reject
+  conflicting Ridge calls; sessions reserve resources across a multi-step task.
+- **Discover before acting.** Agents can inspect both supported operations and
+  the operations your Ridge configuration allows.
+- **Pick up work later.** Background jobs provide durable IDs, results, and logs
+  that another client can inspect after submission.
+
+Coordination requires shared local Ridge state and matching resource lock keys;
+it does not exclude access outside Ridge. See [multi-agent coordination](docs/guides/coordination.md).
+
+## The same workflow in your terminal
+
+With the same resources and inputs already in place:
 
 ```bash
-mkdir -p ridge-demo/inputs ridge-demo/worker ridge-demo/reports
-cp docs/examples/assets/ridge.yaml ridge-demo/ridge.yaml
-cp docs/examples/assets/sales.csv docs/examples/assets/analyze.py ridge-demo/inputs/
-cd ridge-demo
 ridge resources
 ridge copy inputs:sales.csv worker:sales.csv
 ridge copy inputs:analyze.py worker:analyze.py
-ridge exec worker -- python3 analyze.py
+ridge exec worker --timeout 30 -- python3 analyze.py
+# After a successful exit:
 ridge copy worker:report.csv reports:report.csv
 ridge read reports report.csv
 ```
-
-Execution and the final read print:
 
 ```text
 region,revenue
@@ -61,36 +73,26 @@ East,100.00
 West,200.00
 ```
 
-Use a fresh demo directory. The bundled inventory defines three local resource
-names with explicit grants; no cloud credentials or container are needed.
-The [complete walkthrough](docs/getting-started.md) explains each step.
-Switch the worker to Docker without changing the workflow in the
-[cross-backend example and without-Ridge comparison](docs/examples/csv-report.md).
+Ridge loads `./ridge.yaml` by default; use `--config PATH` to choose another
+inventory. The [getting-started guide](docs/getting-started.md) provides a complete
+local setup with bundled inputs. Explore [more examples](docs/examples/index.md)
+for ML experiments, builds, scientific computing, and media processing.
 
-Configuration is loaded from `./ridge.yaml` by default. Pass `--config PATH`
-or set `RIDGE_CONFIG` to select another file. Relative resource roots are
-resolved relative to the configuration file.
+## Install and connect
 
-Background mode on `exec`, `write`, and `copy` returns a durable job ID for
-inspection, logs, and cancellation requests. Jobs start immediately with one
-attempt. See [background jobs](docs/guides/jobs.md), including
-interrupted submission and cancellation behavior.
+From a source checkout, using Python 3.11+ on a POSIX host:
 
-An optional top-level `permissions` map enables default-deny exact operation
-grants. Without it, Ridge runs in unrestricted trusted mode. Resource discovery
-remains visible and reports supported and allowed operations; see
-[Authorization](docs/concepts/authorization.md) for the boundary and bypass
-model.
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install .
+```
 
-Commands are argument vectors and never invoke a shell implicitly. Resource
-filesystem paths are relative to their configured roots; absolute paths and
-paths resolving outside the root are rejected.
-Execution has no timeout unless the caller explicitly requests one.
+The distribution is `ridge-core`; the package and command are `ridge`.
+For development, use `uv sync` and activate the environment instead.
 
-## MCP
-
-`ridge-mcp` serves the same inventory and application operations over local
-stdio using the official MCP Python SDK:
+Point your agent's MCP configuration at the installed `ridge-mcp` executable and
+your resource inventory. For example:
 
 ```toml
 [mcp_servers.ridge]
@@ -100,73 +102,36 @@ required = true
 default_tools_approval_mode = "writes"
 ```
 
-MCP inline reads and execution output are bounded for model context. Resource
-discovery grows with the inventory; job discovery returns bounded summary pages.
-History storage and discovery scan cost can still grow. Tool annotations are
-descriptive host hints; Ridge permission checks occur in the application service
-shared with the CLI. The server has no network listener and inherits the same
-downstream authority as the CLI.
+The local stdio server exposes the same operations and authorization as the CLI,
+with bounded inline reads and execution output. See [MCP setup and tools](docs/mcp.md).
 
-## Capabilities
+## Resources and capabilities
 
 | Capability | Built-in resources | Operations |
 | --- | --- | --- |
 | Compute | local, Docker, SSH | argument-vector execution |
-| Data | local, Docker, SSH, S3 | list, read, write, stat; explicit filesystem/object addressing |
+| Data | local, Docker, SSH, S3 | list, read, write, stat |
 | Copy workflow | all built-ins | streamed file/object copy; filesystem-only tree copy |
 
-Configuration selects a `provider`; permissions select allowed operations.
-Use `local` with data-only grants for files-only access. Discovery reports
-addressing and copy support alongside supported and allowed operations.
+Configure providers and exact operation grants in your inventory. Installed
+Python packages can add [resource providers](docs/providers.md).
 
-Foreground and background copy stream bytes through Ridge with bounded payload
-memory, outside model context. Direct reads and writes are buffered. See
-[copy semantics](docs/guides/copying.md) for staging and replacement behavior.
+Ridge is public-alpha software for one trusted operator with cooperating agents.
+Ridge grants control calls through Ridge; OS and service permissions determine
+downstream authority. Review the [security model](docs/security.md) when
+connecting resources. [Copying](docs/guides/copying.md) and
+[background jobs](docs/guides/jobs.md) cover replacement, recovery, and cancellation.
 
-Installed Python packages can add [resource providers](docs/providers.md).
+## Documentation and development
 
-## Why use Ridge?
+Browse the [documentation website](https://vasinov.github.io/ridge-core/), or start
+with [Configuration](docs/configuration.md), [CLI](docs/cli.md),
+[MCP](docs/mcp.md), and the [Python API](docs/python-api.md).
+See [Architecture](docs/architecture.md) for the design and
+[Development](docs/development.md) for setup and verification.
 
-- **Coordinate multiple agents on shared resources:** automatic resource locks
-  reject conflicting CLI/MCP operations; explicit sessions reserve resources
-  across a read/edit/test or copy/run/retrieve workflow. Managed caller sessions
-  renew leases without asking the model to remember deadlines.
-- **Less transfer glue and fewer tokens spent on it:** a named-resource copy
-  avoids asking the model to generate, write, debug, and explain backend-specific
-  transfer scripts. You still supply the analysis program.
-- **Payloads stay out of model context:** foreground and background copy stream
-  through Ridge with bounded payload memory; the caller receives metadata.
-- **Discoverable operations and permissions:** inspect what each resource
-  supports and what Ridge policy allows before acting.
-- **One contract across CLI and MCP:** the same application authorization and
-  copy semantics serve both frontends.
-- **Reconnectable work:** background job IDs, results, and bounded log reads
-  survive the submitting client. See the [current job limits](docs/guides/jobs.md).
-
-See [Examples](docs/examples/index.md) for data analysis, ML experiments,
-builds/tests, scientific computing, and media processing.
-
-## Documentation
-
-Browse the [documentation website](https://vasinov.github.io/ridge-core/).
-The documentation source is in [`docs/`](docs/index.md):
-
-- [Getting started](docs/getting-started.md)
-- [Configuration](docs/configuration.md)
-- [CLI](docs/cli.md) and [MCP](docs/mcp.md)
-- [Copy semantics](docs/guides/copying.md)
-- [Multi-agent locking and recovery](docs/guides/coordination.md)
-- [Background jobs](docs/guides/jobs.md)
-- [Architecture](docs/architecture.md)
-- [Resource providers](docs/providers.md)
-- [Python API](docs/python-api.md)
-- [Security model](docs/security.md)
-
-## Development
-
-See [Development](docs/development.md) for setup, tests, quality checks, and
-documentation builds. Feedback is especially useful on real workflows, confusing
-resource semantics, and failures; include your provider, a minimal reproduction,
-and expected versus actual behavior, with credentials and private details removed.
+Feedback on real agent workflows, confusing resource semantics, and failures is
+welcome. Include your provider, a minimal reproduction, and expected versus
+actual behavior, with credentials and private details removed.
 
 Ridge is licensed under the [Apache License 2.0](LICENSE).

@@ -1,7 +1,37 @@
 # Getting started
 
-Turn a small sales CSV into a regional revenue report using three named resources.
-This walkthrough needs no cloud account, Docker, or third-party analysis library.
+Discover three named resources, send an analysis to a worker, and read its report.
+The same workflow can be driven from your terminal or by an
+[MCP-connected agent](examples/csv-report.md#with-an-agent).
+
+## Run the analysis
+
+Assume `inputs` contains `sales.csv` and `analyze.py`, `worker` has Python, and
+`reports` is writable. With these resources defined in `./ridge.yaml`, the
+workflow is entirely Ridge commands:
+
+```bash
+ridge resources
+ridge copy inputs:sales.csv worker:sales.csv
+ridge copy inputs:analyze.py worker:analyze.py
+ridge exec worker --timeout 30 -- python3 analyze.py
+# After a successful exit:
+ridge copy worker:report.csv reports:report.csv
+ridge read reports report.csv
+```
+
+Both execution and the final read print:
+
+```text
+region,revenue
+East,100.00
+West,200.00
+```
+
+The input files remain unchanged; the worker and reports resource each contain
+the generated report. Rerunning the copy/analysis steps replaces their exact
+destinations. Need a ready-to-run setup? The steps below provide these inputs
+and three local resources, without a cloud account or Docker.
 
 ## Install
 
@@ -30,27 +60,11 @@ mkdir -p ridge-demo/inputs ridge-demo/worker ridge-demo/reports
 cp docs/examples/assets/ridge.yaml ridge-demo/ridge.yaml
 cp docs/examples/assets/sales.csv docs/examples/assets/analyze.py ridge-demo/inputs/
 cd ridge-demo
-ridge resources
-ridge copy inputs:sales.csv worker:sales.csv
-ridge copy inputs:analyze.py worker:analyze.py
-ridge exec worker -- python3 analyze.py
-ridge copy worker:report.csv reports:report.csv
-ridge read reports report.csv
 ```
 
-Both execution and the final read print:
-
-```text
-region,revenue
-East,100.00
-West,200.00
-```
-
-The [analysis script](examples/assets/analyze.py) uses Python's standard library
-and decimal arithmetic. The [input](examples/assets/sales.csv) contains four sales.
-Copies of the input and script are now in `worker/`, and identical `report.csv`
-files are in `worker/` and `reports/`. Inputs are unchanged. Rerunning these
-copy/analysis steps replaces their exact destinations.
+Now run the [analysis commands above](#run-the-analysis). The
+[analysis script](examples/assets/analyze.py) uses Python's standard library and
+decimal arithmetic; the [input](examples/assets/sales.csv) contains four sales.
 
 ## What the resource names buy you
 

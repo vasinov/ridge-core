@@ -1,62 +1,56 @@
 # Ridge
 
-Ridge gives AI agents a small, explicit interface to named compute,
-filesystem, and object-storage resources. Backend mechanics stay behind one
-application contract exposed through both a CLI and a local MCP server.
-Resource locking lets multiple agents coordinate access to shared files and
-workers without inventing their own locking protocol for every backend.
+Give your AI agents one way to work with local files, Docker containers, SSH
+hosts, and S3. Ridge exposes named resources through a CLI and a local MCP
+server: discover what is available, move data, run programs, and retrieve results.
 
-Ridge currently supports:
+## Start with a task
 
-- local compute and rooted filesystems;
-- existing Docker containers;
-- POSIX hosts reached through OpenSSH;
-- S3 object storage;
-- streamed file and directory copy between compatible resources;
-- optional exact, default-deny operation grants;
-- durable immediate background jobs for execution, writes, and copy;
-- coordinated access across agents, including multi-resource sessions;
-- separately installed resource providers.
+> Run the sales analysis from `inputs` on `worker`. Save the report in `reports`
+> and tell me the revenue by region.
 
-Ridge is public-alpha software for one trusted operator with multiple cooperating
-agents. It uses the operator's existing OS and service access; the
-[security model](security.md) explains how to choose resources and grants.
+An agent discovers the resources and allowed operations, copies the inputs,
+runs the analysis, checks its exit code, and reads back the small report. It
+uses the same Ridge tools whether the worker is local, Docker, or SSH. File
+transfers stream through Ridge instead of passing through the conversation.
+
+Follow the [agent walkthrough](examples/csv-report.md#with-an-agent), or run the
+same task yourself with the [local quickstart](getting-started.md). The
+[example recipes](examples/index.md) cover ML experiments, builds, scientific
+computing, and media processing.
 
 ## Why Ridge?
 
-An agent sees resource names plus supported and allowed operations rather than needing to
-construct Docker, SSH, or cloud-provider commands. Ridge keeps operation
-semantics consistent, checks filesystem paths against configured roots, bounds
-MCP inline reads and execution output, and streams cross-resource transfers
-without placing complete files in model
-context.
+- **Reuse one workflow across backends.** Named resources and explicit operations
+  replace per-task transfer glue and backend-specific addressing.
+- **Move artifacts outside model context.** Copies relay bytes with bounded
+  payload memory; agents receive metadata and choose what to read back.
+- **Coordinate cooperating agents.** Resource locks reject conflicting calls;
+  multi-resource sessions protect a sequence such as copy, run, and retrieve.
+- **Discover access before acting.** Inspect both supported operations and
+  exact operation grants through the same interface.
+- **Reconnect to work.** Background execution, writes, and copies return durable
+  job IDs for later inspection and bounded log reads.
 
-**Multi-agent coordination is a core workflow.** Ordinary CLI/MCP calls acquire
-resource locks automatically: reads can share access, while writes and execution
-exclude conflicting operations. Explicit sessions reserve multiple resources
-across a sequence of calls, such as copying inputs, running a build, and retrieving
-its report. Managed Python/MCP caller sessions renew leases during long calls and
-model reasoning. Shared local state and matching resource keys define the boundary;
-direct access outside Ridge is not protected. See [resource coordination](guides/coordination.md)
-for host integration, contention, and crash recovery.
+Coordination requires callers to share local state and matching resource lock
+keys. Managed Python/MCP caller sessions can renew reservations across long calls
+and model reasoning; direct access outside Ridge is not protected. See
+[coordination and host integration](guides/coordination.md).
 
-Named-resource copy avoids spending model tokens generating, writing, debugging,
-and explaining backend-specific transfer glue. Copy relays payloads with bounded
-memory; direct reads/writes are buffered. CLI and MCP share authorization, and
-durable job IDs make results and bounded logs reconnectable. Resource discovery
-grows with the inventory; job discovery returns bounded summary pages, while
-history storage and metadata scan cost can grow. See [job discovery](guides/jobs.md#discovering-jobs).
+## Connect your resources
 
-Try the [sales-report walkthrough and comparison](examples/csv-report.md), or
-explore [ML, build/test, science, and media examples](examples/index.md).
+Start with [Configuration](configuration.md) and the resource guides for
+[local](resources/local.md), [Docker](resources/docker.md),
+[SSH](resources/ssh.md), and [S3](resources/s3.md). Installed Python packages can
+add [providers](providers.md). Filesystem and object addressing retain their own
+semantics behind the shared operations.
 
-```console
-$ ridge resources
-NAME  PROVIDER  ADDRESSING  COPY  SUPPORTED  ALLOWED  BACKGROUND
-local local    filesystem  True  ...        ...      ...
-$ ridge exec local -- python -c 'print("hello from Ridge")'
-hello from Ridge
-```
+Use the [CLI](cli.md) directly, connect an agent through [MCP](mcp.md), or embed
+the [Python API](python-api.md). The frontends share application authorization,
+copy semantics, jobs, and coordination.
 
-Start with [Getting started](getting-started.md), then read the
-[security model](security.md) before connecting Ridge to an agent.
+Ridge is public-alpha software for one trusted operator with cooperating agents.
+It uses the operator's existing OS and service access. Read the
+[security model](security.md) when choosing resources and grants, and the
+[copy](guides/copying.md) and [job](guides/jobs.md) guides for publication,
+recovery, and cancellation behavior.

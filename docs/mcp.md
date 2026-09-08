@@ -22,6 +22,11 @@ operations allowed by the configured Ridge policy. They also report canonical
 background-capable operations when durable jobs are available, plus `provider`,
 `addressing`, and `supports_copy`. Copy remains a separate application workflow.
 
+For a task-oriented introduction, follow the [agent sales-report example](examples/csv-report.md#with-an-agent):
+discover resources, copy inputs, execute the analysis, check the result, and
+read the report. The [example recipes](examples/index.md) extend that pattern
+to ML, builds, science, and media.
+
 Data tools use `path` for either a relative filesystem path or an exact object
 key/prefix. `list_data` accepts `cursor` and `limit` and returns `addressing`,
 `entries`, and `next_cursor`. `stat_data` returns `addressing` and `metadata` with

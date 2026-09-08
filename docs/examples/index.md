@@ -1,31 +1,35 @@
 # Examples
 
-Ridge is most useful when an agent must move artifacts between different
-execution or data environments, act on them, and reconnect to the result.
-It supplies resource discovery, common operations, streamed copy, and job
-observation—not the domain program or its dependencies.
+Give an agent a task that spans resources: train on a GPU worker, test a project
+in a container, or turn a stored video into a preview. Ridge lets it discover
+the available operations, move the inputs, run the program, and retrieve results
+through the same interface.
 
 It also coordinates multiple agents sharing mutable resources. Automatic locking
 protects individual calls; explicit sessions keep a task's resource reservation
 across calls, with automatic renewal available to adopting Python/MCP hosts.
 
-## Runnable walkthrough
+## Start with an agent task
 
-[Managed caller sessions](../guides/coordination.md#managed-caller-sessions) includes
-a read-only MCP-host example that maintains ownership across several lease periods.
+> Run the sales analysis from `inputs` on `worker`. Save the report in `reports`
+> and tell me the revenue by region.
 
-[Sales CSV to regional report](csv-report.md): start with the credential-free
-[local quickstart](../getting-started.md), then change the worker to Docker and
-observe a background run. Includes expected outputs, cleanup, and a direct-tool
-comparison. No third-party analysis library is required.
+[Sales CSV to regional report](csv-report.md#with-an-agent) follows this request
+through MCP discovery, copy, execution, and report reading. It also covers
+background observation, a Docker worker, and a direct-tool comparison. The
+[local quickstart](../getting-started.md) supplies runnable inputs and setup.
+
+[Managed caller sessions](../guides/coordination.md#managed-caller-sessions) shows
+how a Python MCP host keeps a multi-call reservation alive across lease periods.
 
 ## Illustrative recipes
 
-The recipes below are shapes for adapting your own programs, not copy-and-paste
-benchmarks. Resource names, scripts, data, and dependencies must already exist.
-Discover supported and allowed operations first. After submitting a job, inspect
-its status and command exit code before retrieving outputs; substitute its actual
-job ID in the [job observation commands](../guides/jobs.md).
+The recipes below assume configured resources and existing scripts, data, and
+dependencies. Each pairs an agent request with the core Ridge commands; an MCP
+agent uses the corresponding `copy` and `execute` tools. Discover supported and
+allowed operations first. After submitting a job, inspect its status and command
+exit code before retrieving outputs; use its returned ID in the
+[job observation commands](../guides/jobs.md).
 
 ### Multiple agents sharing a build worker
 
@@ -45,6 +49,9 @@ between operations.
 
 ### ML experiments
 
+> Train a model on `datasets:train.parquet` using `gpu`, and save the model in
+> `artifacts:experiments/run-001/`.
+
 Prerequisites: a single dataset object in an S3 resource `datasets`; a local,
 Docker, or SSH `gpu` worker with the right framework, GPU drivers, and training
 code already installed; a writable `artifacts` resource.
@@ -61,6 +68,9 @@ bounded logs, and copy metadata. Multi-file datasets need explicit file copies o
 a prebuilt archive; an object prefix is not a filesystem tree.
 
 ### Builds and tests
+
+> Run the tests for `source:project` on `builder` and bring the test report back
+> to `reports`.
 
 Prerequisites: a `source` filesystem resource with a self-contained source tree,
 an existing `builder` container/host with dependencies, and local `reports`.
@@ -79,6 +89,9 @@ the command's exit code to determine whether tests passed.
 
 ### Scientific computing
 
+> Run the solver on `lab` with `inputs:parameters.json` and save its results in
+> `reports`.
+
 Prerequisites: an SSH `lab` host with a solver and licenses installed, local
 `inputs` and `reports`, and a single input file.
 
@@ -94,6 +107,9 @@ session. Confirm host policy before executing directly on shared infrastructure;
 use its required scheduler when direct execution is not permitted.
 
 ### Media processing
+
+> Make a 1280-pixel-wide preview of `media:source.mp4` on `worker` and save it
+> in `outputs`.
 
 Prerequisites: a single video object in `media`, an existing `worker` with FFmpeg
 and sufficient destination staging space, and writable `outputs`.
