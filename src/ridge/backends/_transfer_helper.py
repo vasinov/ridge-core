@@ -8,6 +8,7 @@ import os
 from pathlib import Path, PurePosixPath
 import posixpath
 import shutil
+import signal
 import stat
 import sys
 import tarfile
@@ -216,11 +217,11 @@ def export_tree(root, request):
 def safe_member_path(stage, member_name):
     name = PurePosixPath(member_name)
     if name.is_absolute() or not name.parts or name.parts[0] != "payload":
-        fail("transfer", "invalid path in transfer archive: " + member_name)
+        raise ValueError("invalid path in transfer archive: " + member_name)
     if any(part in ("", ".", "..") for part in name.parts):
-        fail("transfer", "invalid path in transfer archive: " + member_name)
+        raise ValueError("invalid path in transfer archive: " + member_name)
     if name.as_posix() != member_name:
-        fail("transfer", "non-canonical path in transfer archive: " + member_name)
+        raise ValueError("non-canonical path in transfer archive: " + member_name)
     return stage.joinpath(*name.parts)
 
 
@@ -271,10 +272,46 @@ def prepare_destination(root, path_text, payload_kind):
     return target, missing
 
 
+def cancel_staging(signum, frame):
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    raise InterruptedError("destination staging cancelled")
+
+
+def begin_stage(root, path_text, payload_kind):
+    target, created = prepare_destination(root, path_text, payload_kind)
+    stage = None
+    try:
+        stage = Path(tempfile.mkdtemp(prefix=TOKEN_PREFIX, dir=target.parent))
+        metadata = {"target": path_text, "kind": payload_kind,
+                    "phase": "receiving", "created_parents": created}
+        record_phase(stage, metadata, "receiving")
+        signal.signal(signal.SIGTERM, cancel_staging)
+        reply({"ok": True, "ready": True, "token": stage.relative_to(root).as_posix()})
+        return stage, metadata
+    except BaseException as error:
+        if stage is not None:
+            try:
+                remove_tree(stage)
+            except OSError as cleanup_error:
+                fail("transfer", str(error) + "; startup cleanup failed: " + str(cleanup_error)
+                     + "; staging path: " + str(stage))
+        clean_created_parents(root, created)
+        raise
+
+
+def staging_failed(root, stage, metadata, error):
+    detail = str(error) or type(error).__name__
+    try:
+        record_phase(stage, metadata, "staging_failed")
+    except OSError as metadata_error:
+        detail += "; cannot record staging phase: " + str(metadata_error)
+    # No payload writes follow this acknowledgement, even when recording fails.
+    reply({"ok": False, "stopped": True, "token": stage.relative_to(root).as_posix()})
+    fail("transfer", detail + "; " + recovery_detail(stage, metadata))
+
+
 def stage_file(root, request):
-    path_text = request["path"]
-    target, created = prepare_destination(root, path_text, "file")
-    stage = Path(tempfile.mkdtemp(prefix=TOKEN_PREFIX, dir=target.parent))
+    stage, metadata = begin_stage(root, request["path"], "file")
     payload = stage / "payload"
     bytes_copied = 0
     try:
@@ -283,26 +320,13 @@ def stage_file(root, request):
             while chunk := sys.stdin.buffer.read(CHUNK_SIZE):
                 output.write(chunk)
                 bytes_copied += len(chunk)
-        metadata = {
-            "target": path_text,
-            "kind": "file",
-            "phase": "staged",
-            "created_parents": created,
-            "bytes_copied": bytes_copied,
-            "entries_copied": 1,
-        }
-        (stage / METADATA_NAME).write_text(json.dumps(metadata, separators=(",", ":")))
+        metadata.update(bytes_copied=bytes_copied, entries_copied=1)
+        record_phase(stage, metadata, "staged")
     except BaseException as error:
-        try:
-            remove_tree(stage)
-        except OSError:
-            pass
-        clean_created_parents(root, created)
-        if isinstance(error, KeyboardInterrupt):
-            raise
-        fail("transfer", str(error))
+        staging_failed(root, stage, metadata, error)
     reply({
         "ok": True,
+        "stopped": True,
         "token": stage.relative_to(root).as_posix(),
         "bytes_copied": bytes_copied,
         "entries_copied": 1,
@@ -310,9 +334,7 @@ def stage_file(root, request):
 
 
 def stage_tree(root, request):
-    path_text = request["path"]
-    target, created = prepare_destination(root, path_text, "tree")
-    stage = Path(tempfile.mkdtemp(prefix=TOKEN_PREFIX, dir=target.parent))
+    stage, metadata = begin_stage(root, request["path"], "tree")
     seen = set()
     directory_modes = []
     symlinks = []
@@ -357,6 +379,8 @@ def stage_tree(root, request):
                 raise ValueError("unsupported member in transfer archive: " + member.name)
             entries_copied += 1
         archive.close()
+        while sys.stdin.buffer.read(CHUNK_SIZE):
+            pass
         payload = stage / "payload"
         if "payload" not in seen or (not payload.is_file() and not payload.is_dir()):
             raise ValueError("transfer archive has no file or directory payload")
@@ -365,26 +389,13 @@ def stage_tree(root, request):
             resolved.relative_to(payload if payload.is_dir() else payload.parent)
         for directory, mode in reversed(directory_modes):
             directory.chmod(mode)
-        metadata = {
-            "target": path_text,
-            "kind": "tree",
-            "phase": "staged",
-            "created_parents": created,
-            "bytes_copied": bytes_copied,
-            "entries_copied": entries_copied,
-        }
-        (stage / METADATA_NAME).write_text(json.dumps(metadata, separators=(",", ":")))
+        metadata.update(bytes_copied=bytes_copied, entries_copied=entries_copied)
+        record_phase(stage, metadata, "staged")
     except BaseException as error:
-        try:
-            remove_tree(stage)
-        except OSError:
-            pass
-        clean_created_parents(root, created)
-        if isinstance(error, KeyboardInterrupt):
-            raise
-        fail("transfer", str(error))
+        staging_failed(root, stage, metadata, error)
     reply({
         "ok": True,
+        "stopped": True,
         "token": stage.relative_to(root).as_posix(),
         "bytes_copied": bytes_copied,
         "entries_copied": entries_copied,
@@ -486,7 +497,7 @@ def commit(root, request):
 def abort(root, request):
     stage = stage_from_token(root, request["token"])
     metadata = load_metadata(stage)
-    if metadata.get("phase") not in ("staged", "rolled_back"):
+    if metadata.get("phase") not in ("staged", "staging_failed", "rolled_back"):
         fail("transfer", "automatic cleanup refused; " + recovery_detail(stage, metadata))
     # A backup is user data even if phase metadata is incomplete or inconsistent.
     if (stage / "replaced").exists() or (stage / "replaced").is_symlink():

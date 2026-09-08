@@ -104,6 +104,13 @@ changing Ridge core.
   publication retain recovery artifacts; published destinations are never rolled
   back by cleanup. Commit is one-attempt and requires a valid acknowledgement.
   Transport uncertainty prevents concurrent abort against a possibly live commit.
+  Before streaming, the destination helper persists a receiving phase and announces
+  its token. It reports a matching stopped token only after payload writes end;
+  success and failed staging are distinct from publication. Cancellation closes
+  unbuffered payload input and drains reports for up to two seconds before transport
+  shutdown. Automatic abort requires both acknowledged staging completion and a
+  disposable persisted phase, and always preserves retained backups. SIGTERM during
+  receiving allows the helper to record failed staging and report its stop.
   Phase metadata supports manual recovery, not power-loss transactional durability.
   The [copying guide](guides/copying.md) owns recovery instructions.
 - Tree copy accepts regular files, directories, and relative symbolic links

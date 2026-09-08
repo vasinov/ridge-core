@@ -46,9 +46,15 @@ Follow [coordination recovery](coordination.md#inspecting-abandoned-work) for an
 uncertain claims; retained artifacts and operation ownership are separate concerns.
 
 Before publication, failure/cancellation cleanup attempts to remove disposable
-staging and still-empty ancestors created by the copy. Interrupted staging,
-abrupt process termination, or cleanup errors can leave artifacts. S3 multipart
-cleanup attempts to abort unfinished uploads. Secondary cleanup errors accompany
+staging and still-empty ancestors created by the copy. Filesystem helpers announce
+their staging token before payload streaming. On interruption, Ridge closes the
+payload input and allows two seconds for a report that staging has stopped before
+stopping the transport. Cleanup requires a matching stop report and a disposable
+phase; stopping a Docker/SSH client alone does not establish that its writer stopped.
+An unconfirmed stop retains any staging and reports the known resource-relative
+path. Abrupt termination before the token arrives can leave unidentified staging;
+cleanup errors can also leave artifacts. S3 multipart cleanup attempts to abort
+unfinished uploads. Secondary cleanup errors accompany
 the primary failure in CLI/MCP errors and background job inspection, with bounded
 diagnostics and explicit truncation. See [job cancellation limits](jobs.md#current-limitations).
 

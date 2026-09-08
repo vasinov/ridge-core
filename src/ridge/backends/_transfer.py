@@ -18,6 +18,7 @@ from ridge.errors import (
     RidgeError,
     SourceChangedError,
     TransferError,
+    format_error,
 )
 from ridge.model import TransferPayloadKind
 from ridge.resource import TransferDestination, TransferSource
@@ -120,49 +121,100 @@ class ProcessTransferDestination(_Process, TransferDestination):
         self._stderr = cast(BinaryIO, process.stderr)
         self._invoke_control = invoke_control
         self._token: str | None = None
+        self._staging_stopped = False
+        self._finished = False
+        self._collected = False
+        self._cancelled = False
         self._commit_attempted = False
         self._commit_uncertain = False
+
+    @staticmethod
+    def _response(content: bytes) -> dict[str, object]:
+        try:
+            response = cast(object, json.loads(content))
+            if isinstance(response, dict):
+                return cast(dict[str, object], response)
+        except (UnicodeError, json.JSONDecodeError):
+            pass
+        raise TransferError("invalid response from transfer destination")
+
+    def start(self) -> None:
+        line = self._stdout.readline(64 * 1024)
+        if not line:
+            _, stderr = self.process.communicate(timeout=2)
+            self._collected = True
+            self._stdin = None
+            self._wait(stderr)
+        payload = self._response(line)
+        token = payload.get("token")
+        if (
+            payload.get("ok") is not True
+            or payload.get("ready") is not True
+            or not isinstance(token, str)
+            or not token
+        ):
+            raise TransferError("invalid staging readiness acknowledgement")
+        self._token = token
 
     def write(self, content: bytes) -> None:
         if self._stdin is None:
             raise TransferError("transfer destination is already closed")
         try:
-            self._stdin.write(content)
+            remaining = memoryview(content)
+            while remaining:
+                written = self._stdin.write(remaining)
+                if not written:
+                    raise TransferError("transfer destination stopped accepting content")
+                remaining = remaining[written:]
         except BrokenPipeError as exc:
             raise TransferError("transfer destination stopped accepting content") from exc
 
     def finish(self) -> tuple[int, int]:
-        if self._stdin is not None:
-            self._stdin.close()
-            self._stdin = None
-        stdout = self._stdout.read()
-        stderr = self._stderr.read()
-        self._wait(stderr)
+        if self._collected:
+            raise TransferError("transfer destination is already closed")
+        self._stdin = None
+        stdout, stderr = self.process.communicate()
+        self._collected = True
+        return self._completion(stdout, stderr)
+
+    def _completion(self, stdout: bytes, stderr: bytes) -> tuple[int, int]:
         try:
-            response = cast(object, json.loads(stdout))
-            if not isinstance(response, dict):
-                raise TypeError
-            payload = cast(dict[str, object], response)
+            payload = self._response(stdout)
+            if (
+                self._token is None
+                or payload.get("token") != self._token
+                or payload.get("stopped") is not True
+            ):
+                raise TransferError("invalid staging completion acknowledgement")
+        except TransferError as acknowledgement_error:
+            if self.process.returncode:
+                error = _failure(self.resource_name, self.process.returncode, stderr)
+                error.add_note(str(acknowledgement_error))
+                raise error from acknowledgement_error
+            raise
+        try:
+            self._staging_stopped = True
+            self._wait(stderr)
             if payload.get("ok") is not True:
                 raise TypeError
-            token = payload["token"]
             bytes_copied = payload["bytes_copied"]
             entries_copied = payload["entries_copied"]
             if (
-                not isinstance(token, str)
-                or not isinstance(bytes_copied, int)
-                or not isinstance(entries_copied, int)
+                type(bytes_copied) is not int
+                or bytes_copied < 0
+                or type(entries_copied) is not int
+                or entries_copied < 0
             ):
                 raise TypeError
-        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        except (KeyError, TypeError) as exc:
             raise TransferError("invalid response from transfer destination") from exc
-        self._token = token
+        self._finished = True
         return bytes_copied, entries_copied
 
     def commit(self) -> None:
         if self._commit_attempted:
             raise TransferError("publication cannot be retried")
-        if self._token is None:
+        if self._token is None or not self._finished or self._cancelled:
             raise TransferError("transfer destination has not finished staging")
         self._commit_attempted = True
         try:
@@ -185,25 +237,49 @@ class ProcessTransferDestination(_Process, TransferDestination):
     def abort(self) -> None:
         if self._token is None:
             return
+        if not self._staging_stopped:
+            raise TransferError(
+                f"resource {self.resource_name!r}: cleanup refused after unconfirmed staging; "
+                f"inspect any remaining staging at {self._token}"
+            )
         if self._commit_uncertain:
             raise TransferError(
                 f"resource {self.resource_name!r}: cleanup refused after unconfirmed publication; "
                 f"inspect any remaining staging at {self._token}"
             )
         token = self._token
-        self._invoke_control("abort", {"token": token})
+        try:
+            self._invoke_control("abort", {"token": token})
+        except BaseException as error:
+            error.add_note(
+                f"resource {self.resource_name!r}: inspect any remaining staging at {token}"
+            )
+            raise
         self._token = None
 
     def cancel(self) -> None:
-        if self._stdin is not None:
-            with suppress(OSError):
-                self._stdin.close()
-            self._stdin = None
-        self._stop()
-        with suppress(OSError):
-            self._stdout.close()
-        with suppress(OSError):
-            self._stderr.close()
+        self._cancelled = True
+        if self._collected:
+            return
+        self._stdin = None
+        try:
+            # Unbuffered input closes without flushing a blocked payload write.
+            # communicate drains both report pipes within the grace period.
+            stdout, stderr = self.process.communicate(timeout=2)
+            self._collected = True
+            self._completion(stdout, stderr)
+        except subprocess.TimeoutExpired as error:
+            raise TransferError(
+                f"resource {self.resource_name!r}: staging stop unconfirmed after cancellation; "
+                f"inspect any remaining staging at {self._token or 'unknown path'}"
+            ) from error
+        finally:
+            self._collected = True
+            self._stop()
+            for stream in (self.process.stdin, self._stdout, self._stderr):
+                if stream is not None:
+                    with suppress(OSError):
+                        stream.close()
 
 
 class ProcessTransferOperations:
@@ -222,6 +298,7 @@ class ProcessTransferOperations:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                bufsize=0 if operation.startswith("stage-") else -1,
                 # The coordinator must receive Ctrl-C so it can close both endpoints.
                 start_new_session=not in_job_worker.get(),
             )
@@ -273,13 +350,20 @@ class ProcessTransferOperations:
 
     def open_destination(self, path: str, kind: TransferPayloadKind) -> ProcessTransferDestination:
         process = self._start("stage-file" if kind == "file" else "stage-tree")
-        assert process.stdin is not None
+        destination = ProcessTransferDestination(process, self._resource_name, self._invoke_control)
         try:
-            process.stdin.write(_request_bytes({"path": path}))
-        except OSError as exc:
-            process.kill()
-            process.wait()
-            raise ResourceUnavailableError(
-                f"cannot start transfer to resource {self._resource_name!r}: {exc}"
-            ) from exc
-        return ProcessTransferDestination(process, self._resource_name, self._invoke_control)
+            destination.write(_request_bytes({"path": path}))
+            destination.start()
+        except BaseException as error:
+            error.add_note(
+                f"resource {self._resource_name!r}: staging startup for destination {path!r} failed"
+            )
+            for cleanup in (destination.cancel, destination.abort):
+                try:
+                    cleanup()
+                except Exception as cleanup_error:  # noqa: BLE001 - preserve startup failure
+                    error.add_note(
+                        f"destination startup cleanup also failed: {format_error(cleanup_error)}"
+                    )
+            raise
+        return destination

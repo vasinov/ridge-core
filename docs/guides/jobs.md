@@ -68,6 +68,10 @@ Only verified local termination produces `cancelled`; unverified termination
 produces `lost` with an explanation. Zombies count as stopped, not live workers.
 No recovery path signals a PID merely because it appears in the database.
 
+Filesystem copy helpers handle SIGTERM during staging so they can report that
+writes have stopped. The worker uses that report for
+[staging cleanup](copying.md); forced termination can prevent its delivery.
+
 The cancel call waits for a bounded interval (normally up to about 12 seconds,
 excluding database contention). If it returns a nonterminal job with cancellation
 requested, inspect again; a request is not confirmation. Already-persisted terminal

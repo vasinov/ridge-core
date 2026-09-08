@@ -99,7 +99,7 @@ def copy(registry: ResourceRegistry, request: CopyRequest) -> CopyResult:
                     destination.cancel()
                 except Exception as cleanup_error:  # noqa: BLE001 - preserve primary failure
                     error.add_note(
-                        f"destination cancellation also failed: {format_error(cleanup_error)}"
+                        f"destination staging/cancellation report: {format_error(cleanup_error)}"
                     )
             try:
                 destination.abort()

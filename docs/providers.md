@@ -61,7 +61,9 @@ and raise `OutputLimitExceededError` rather than returning a truncated result.
 See [data semantics](concepts/resources.md#shared-data-operations-explicit-addressing).
 
 Transfer `finish()` completes staging; only `commit()` publishes the destination,
-after both endpoints have finished successfully. `abort()` must not delete a
+after both endpoints have finished successfully. Establish cleanup ownership
+before accepting payload. After interruption, `cancel()` stops staging or reports
+uncertainty; `abort()` must not race a possibly active writer. `abort()` must not delete a
 previous destination retained for recovery, or undo a published result. An
 unconfirmed commit must preserve available recovery artifacts rather than retrying
 publication. Report the primary failure and attach secondary cleanup/recovery
