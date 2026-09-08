@@ -282,6 +282,16 @@ therefore requires both its source and destination grants. This keeps the policy
 exact but intentionally cannot distinguish permission to perform an
 operation from permission to observe its job metadata.
 
+Job discovery returns bounded summary pages (default 50, maximum 200), ordered
+by immutable submission timestamp and ID descending. The manager scans indexed
+metadata in bounded batches; the application supplies the current authorization
+decision before page filling. Terminal results are not loaded for discovery.
+Opaque cursors identify a position and resolved state-directory path, not a
+snapshot or permission grant. Newer jobs require restarting discovery, while
+status and authorization remain live. Only returned jobs undergo lifecycle
+reconciliation. Full results, errors, and cancellation intent belong to inspection.
+Pagination does not impose retention or bound the total scan through hidden jobs.
+
 States are `starting`, `running`, `succeeded`, `failed`, `cancelled`, and
 `lost`. A nonzero child exit is a successfully completed execution attempt and
 its exit code remains in the job result. `lost` covers expired startup, lost

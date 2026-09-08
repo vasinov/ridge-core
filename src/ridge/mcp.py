@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 from collections.abc import Callable, Sequence
+from dataclasses import asdict
 from functools import wraps
 from pathlib import Path
 from typing import Annotated, Literal, ParamSpec, TypeVar
@@ -169,7 +170,7 @@ class LocksResult(_WireModel):
     next_cursor: str | None
 
 
-class JobResult(_WireModel):
+class JobSummaryResult(_WireModel):
     id: str
     kind: str
     status: str
@@ -177,13 +178,17 @@ class JobResult(_WireModel):
     submitted_at: str
     started_at: str | None
     finished_at: str | None
+
+
+class JobResult(JobSummaryResult):
     error: str | None
     result: dict[str, object] | None
     cancellation_requested: bool
 
 
 class JobsResult(_WireModel):
-    jobs: list[JobResult]
+    jobs: list[JobSummaryResult]
+    next_cursor: str | None
 
 
 class JobLogResult(_WireModel):
@@ -590,9 +595,13 @@ def create_server(service: RidgeService) -> MCPServer[None]:
 
     @server.tool(annotations=_READ_ONLY, structured_output=True)
     @_tool_errors
-    def list_jobs() -> JobsResult:
-        """List durable jobs visible under the current resource policy."""
-        return JobsResult(jobs=[_job_result(job) for job in service.list_jobs()])
+    def list_jobs(limit: int = 50, cursor: str | None = None) -> JobsResult:
+        """Page authorized job summaries, newest first; limit 1–200. Inspect for results/errors."""
+        page = service.list_jobs(limit=limit, cursor=cursor)
+        return JobsResult(
+            jobs=[JobSummaryResult.model_validate(asdict(job)) for job in page.jobs],
+            next_cursor=page.next_cursor,
+        )
 
     @server.tool(annotations=_READ_ONLY, structured_output=True)
     @_tool_errors

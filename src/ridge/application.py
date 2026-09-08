@@ -24,7 +24,9 @@ from ridge.model import (
     Job,
     JobKind,
     JobLog,
+    JobPage,
     JobScope,
+    JobSummary,
     ObjectStat,
     Operation,
     ResourceInspection,
@@ -471,8 +473,9 @@ class RidgeService:
             local_only=self._local_scopes(scopes),
         )
 
-    def list_jobs(self) -> tuple[Job, ...]:
-        return tuple(job for job in self._job_manager().list() if self._job_allowed(job))
+    def list_jobs(self, *, limit: int = 50, cursor: str | None = None) -> JobPage:
+        """Return authorized summaries, newest first; resume with the page's opaque cursor."""
+        return self._job_manager().list(limit=limit, cursor=cursor, allowed=self._job_allowed)
 
     def inspect_job(self, job_id: str) -> Job:
         job = self._job_manager().get(job_id)
@@ -508,7 +511,7 @@ class RidgeService:
             raise JobsUnavailableError("durable jobs require a service loaded from configuration")
         return self._jobs
 
-    def _job_allowed(self, job: Job) -> bool:
+    def _job_allowed(self, job: Job | JobSummary) -> bool:
         return all(
             self._authorization.allows(scope.resource, scope.operation) for scope in job.scopes
         )

@@ -88,7 +88,7 @@ def test_copy_job_visibility_requires_both_data_scopes(tmp_path: Path) -> None:
             AuthorizationPolicy.exact({"local": frozenset({grant})}),
             JobManager(tmp_path / "job-state", tmp_path / "ridge.yaml", "observation-only"),
         )
-        assert restricted.list_jobs() == ()
+        assert restricted.list_jobs().jobs == ()
         with pytest.raises(AuthorizationDeniedError):
             restricted.inspect_job(job.id)
 
@@ -197,7 +197,7 @@ def test_job_listing_is_filtered_by_current_underlying_grants(tmp_path: Path) ->
         JobManager(loaded.state_directory, loaded.path, loaded.fingerprint),
     )
 
-    assert hidden.list_jobs() == ()
+    assert hidden.list_jobs().jobs == ()
     with pytest.raises(AuthorizationDeniedError, match="authorization denied for job"):
         hidden.inspect_job(job.id)
 
@@ -264,6 +264,22 @@ def test_idempotent_retry_reconciles_expired_start(
     assert repeated.id == job_id
     assert repeated.status is JobStatus.LOST
     assert not (tmp_path / "output").exists()
+
+
+def test_discovery_reconciles_only_visible_returned_jobs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    _expire(manager, job_id)
+    assert manager.list(allowed=lambda _: False).jobs == ()
+    with manager.connect() as connection:
+        assert connection.execute("SELECT status FROM jobs").fetchone()[0] == "starting"
+    page = manager.list(allowed=lambda _: True)
+    assert page.jobs[0].status is JobStatus.LOST
+    assert page.jobs[0].finished_at is not None
+    assert page.next_cursor is None
+    assert manager.get(job_id).error == "job startup handoff expired"
+    assert not (manager.directory / job_id / "payload.bin").exists()
 
 
 def test_cancel_before_start_fences_late_supervisor(
@@ -396,7 +412,7 @@ def test_interrupted_payload_staging_rolls_back_and_removes_new_directory(
                 payload=b"other",
             )
     assert set(manager.directory.iterdir()) == before
-    assert [job.id for job in manager.list()] == [job_id]
+    assert [job.id for job in manager.list(allowed=lambda _: True).jobs] == [job_id]
 
 
 def test_ps_failure_is_not_proof_of_termination(monkeypatch: pytest.MonkeyPatch) -> None:

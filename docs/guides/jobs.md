@@ -89,9 +89,38 @@ the worker may still be running. Recovery does not guess at process ownership or
 kill possibly reused PIDs. Do not blindly resubmit under a new key: first inspect
 whether the original work is still running or produced side effects.
 
-Job listing currently fetches all authorized jobs without pagination. Application
-and MCP return full records; CLI prints ID/kind/status/submission-time rows.
-Unlike data listings and log reads, its response grows with history.
+## Discovering jobs
+
+Python `list_jobs(limit=50, cursor=None)`, CLI `jobs list --limit 50`, and MCP
+`list_jobs` return one page with `jobs` and `next_cursor`. Limits must be 1–200.
+Each summary contains `id`, `kind`, `status`, `scopes` (resource/operation pairs),
+`submitted_at`, `started_at`, and `finished_at`. Inspect a job for its full result,
+error, and cancellation intent; discovery does not include these fields or requests.
+
+```console
+$ ridge jobs list --limit 20
+$ ridge jobs list --limit 20 --cursor TOKEN_FROM_PREVIOUS_PAGE
+$ ridge jobs inspect JOB_ID
+```
+
+Jobs sort by submission timestamp descending, then ID descending for equal
+timestamps. Pass the opaque `next_cursor` unchanged to continue after the last
+returned job; `null` means no more visible jobs were found. Page size may change
+between calls. Cursors are tied to the resolved state-directory path; malformed
+cursors or cursors from another directory fail. They are positions, not credentials.
+
+Listing is not a snapshot. Newer submissions appear when you restart without a
+cursor; status and timestamps of execution are observed live. Removed entries
+do not shift continuation positions. Current policy is checked before filling
+each page, including every scope of a copy job. A policy change can change which
+jobs are visible; restart discovery for a complete view under the new policy.
+
+Discovery reads metadata in bounded batches, using an index for ordering, and
+does not load terminal-job results. Hidden history can still require scanning
+many batches to fill a page or establish its end; page size bounds response count,
+not execution time or total metadata bytes. Only visible jobs returned on a page
+are reconciled for expired startup or supervisor loss. Inspect a known job ID
+directly when monitoring its lifecycle.
 
 ## Retention and sensitive data
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import fcntl
 import hashlib
 import json
@@ -12,7 +14,7 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -21,7 +23,7 @@ from typing import Literal, cast
 
 from ridge.coordination import Coordination
 from ridge.errors import JobConflictError, JobNotFoundError, RidgeError
-from ridge.model import Job, JobKind, JobLog, JobScope, JobStatus, Operation
+from ridge.model import Job, JobKind, JobLog, JobPage, JobScope, JobStatus, JobSummary, Operation
 
 _TERMINAL = {
     JobStatus.SUCCEEDED,
@@ -173,13 +175,73 @@ class JobManager:
             raise RidgeError(f"cannot start job supervisor: {exc}") from exc
         return self.get(job_id)
 
-    def list(self) -> tuple[Job, ...]:
+    def list(
+        self,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+        allowed: Callable[[JobSummary], bool],
+    ) -> JobPage:
+        if type(limit) is not int or not 1 <= limit <= 200:
+            raise ValueError("job limit must be between 1 and 200")
+        store = hashlib.sha256(str(self.database.resolve()).encode()).hexdigest()
+        after: tuple[str, str] | None = None
+        if cursor is not None:
+            try:
+                if len(cursor) > 1024:
+                    raise ValueError
+                decoded: object = json.loads(base64.b64decode(cursor, validate=True))
+                if not isinstance(decoded, list):
+                    raise TypeError
+                values = cast(list[object], decoded)
+                if (
+                    len(values) != 3
+                    or not all(isinstance(value, str) for value in values)
+                    or values[0] != store
+                ):
+                    raise ValueError
+                position = cast(list[str], values)
+                datetime.fromisoformat(position[1])
+                uuid.UUID(position[2])
+                after = (position[1], position[2])
+            except (ValueError, TypeError, binascii.Error) as exc:
+                raise ValueError("invalid job cursor for this state directory") from exc
+        entries: list[JobSummary] = []
         connection = self.connect()
         try:
-            rows = connection.execute("SELECT * FROM jobs ORDER BY submitted_at DESC").fetchall()
+            while True:
+                rows = connection.execute(
+                    "SELECT id, kind, status, scopes_json, submitted_at, started_at, finished_at "
+                    "FROM jobs "
+                    + ("WHERE (submitted_at, id) < (?, ?) " if after else "")
+                    + "ORDER BY submitted_at DESC, id DESC LIMIT 200",
+                    after or (),
+                ).fetchall()
+                for row in rows:
+                    summary = self._row_to_summary(row)
+                    after = (summary.submitted_at, summary.id)
+                    if not allowed(summary):
+                        continue
+                    if len(entries) == limit:
+                        last = entries[-1]
+                        token = base64.b64encode(
+                            _json([store, last.submitted_at, last.id]).encode()
+                        ).decode()
+                        return JobPage(tuple(entries), token)
+                    if summary.status not in _TERMINAL:
+                        self.get(summary.id)
+                        refreshed = connection.execute(
+                            "SELECT id, kind, status, scopes_json, submitted_at, started_at, "
+                            "finished_at FROM jobs WHERE id = ?",
+                            (summary.id,),
+                        ).fetchone()
+                        assert refreshed is not None
+                        summary = self._row_to_summary(refreshed)
+                    entries.append(summary)
+                if len(rows) < 200:
+                    return JobPage(tuple(entries), None)
         finally:
             connection.close()
-        return tuple(self._reconcile(self._row_to_job(row)) for row in rows)
 
     def get(self, job_id: str) -> Job:
         connection = self.connect()
@@ -269,6 +331,9 @@ class JobManager:
                 cancellation_requested INTEGER NOT NULL
             )
             """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS jobs_discovery ON jobs (submitted_at DESC, id DESC)"
         )
         return connection
 
@@ -376,6 +441,21 @@ class JobManager:
             else:
                 return job
         return self.get(job.id)
+
+    @staticmethod
+    def _row_to_summary(row: sqlite3.Row) -> JobSummary:
+        raw_scopes = cast(list[dict[str, str]], json.loads(row["scopes_json"]))
+        return JobSummary(
+            id=row["id"],
+            kind=JobKind(row["kind"]),
+            status=JobStatus(row["status"]),
+            scopes=tuple(
+                JobScope(scope["resource"], Operation(scope["operation"])) for scope in raw_scopes
+            ),
+            submitted_at=row["submitted_at"],
+            started_at=row["started_at"],
+            finished_at=row["finished_at"],
+        )
 
     @staticmethod
     def _row_to_job(row: sqlite3.Row) -> Job:

@@ -318,11 +318,13 @@ def copy_command(
 
 @jobs_app.command("list")
 @_handle_errors
-def jobs_list_command(ctx: typer.Context) -> None:
-    """List jobs visible under the current resource policy."""
-    typer.echo("ID\tKIND\tSTATUS\tSUBMITTED")
-    for job in _service(ctx).list_jobs():
-        typer.echo(f"{job.id}\t{job.kind.value}\t{job.status.value}\t{job.submitted_at}")
+def jobs_list_command(
+    ctx: typer.Context,
+    limit: Annotated[int, typer.Option(help="Page size, 1–200.")] = 50,
+    cursor: Annotated[str | None, typer.Option(help="Opaque continuation token.")] = None,
+) -> None:
+    """Return a JSON page of authorized job summaries, newest first."""
+    typer.echo(json.dumps(asdict(_service(ctx).list_jobs(limit=limit, cursor=cursor))))
 
 
 @jobs_app.command("inspect")

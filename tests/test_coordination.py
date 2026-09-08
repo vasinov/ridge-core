@@ -194,7 +194,7 @@ def test_background_submission_and_claim_are_atomic_and_idempotent(
     session = service.acquire_locks([_scope()])
     with pytest.raises(LockConflictError):
         service.submit_write("a", "no", b"no")
-    assert service.list_jobs() == ()
+    assert service.list_jobs().jobs == ()
     owned = service.with_lock(_token(session))
     job = owned.submit_write("a", "yes", b"yes", idempotency_key="one")
     assert owned.submit_write("a", "yes", b"yes", idempotency_key="one").id == job.id

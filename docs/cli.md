@@ -12,7 +12,7 @@ ridge list RESOURCE [PATH] [--limit N] [--cursor TOKEN]
 ridge read RESOURCE PATH
 ridge write RESOURCE PATH (--text TEXT | --from FILE)
 ridge stat RESOURCE PATH
-ridge jobs list
+ridge jobs list [--limit N] [--cursor TOKEN]
 ridge jobs inspect JOB_ID
 ridge jobs logs JOB_ID [--stream stdout|stderr] [--offset N]
 ridge jobs cancel JOB_ID
@@ -66,8 +66,9 @@ Pass `--timeout SECONDS` to bound it explicitly.
 `write` also accepts bytes from stdin when neither `--text` nor `--from` is given;
 all three direct-write forms buffer the payload. Use `copy` for large files.
 
-`jobs list` currently prints every authorized job as ID/kind/status/submission
-time rows without pagination. `jobs inspect` emits JSON including results and
+`jobs list` returns a JSON page (`jobs`, `next_cursor`) of authorized summaries,
+newest first, with a default limit of 50 and maximum of 200. Pass `--cursor TOKEN`
+to continue. `jobs inspect` emits JSON including results and
 errors; a `succeeded` execution
 job can still have a nonzero `result.exit_code`. See [Background jobs](guides/jobs.md)
 for log paging, retention, configuration-change rejection, and cancellation limits.

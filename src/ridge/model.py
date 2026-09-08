@@ -143,6 +143,23 @@ class Job:
 
 
 @dataclass(frozen=True, slots=True)
+class JobSummary:
+    id: str
+    kind: JobKind
+    status: JobStatus
+    scopes: tuple[JobScope, ...]
+    submitted_at: str
+    started_at: str | None
+    finished_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class JobPage:
+    jobs: tuple[JobSummary, ...]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class JobLog:
     job_id: str
     stream: Literal["stdout", "stderr"]

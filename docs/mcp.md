@@ -48,10 +48,12 @@ Data and execution results are bounded:
 - stdout and stderr are independently limited to 32 KiB while retaining their
   full byte counts.
 
-Resource discovery grows with the configured inventory. `list_jobs` currently
-returns all authorized full job records without pagination; do not assume every
-MCP response has a fixed bound. Use `inspect_job` for a known ID and bounded
-`read_job_logs` pages to reconnect. See [job limitations](guides/jobs.md#current-limitations).
+Resource discovery grows with the configured inventory. `list_jobs(limit=50,
+cursor=None)` returns authorized summaries in a `jobs`/`next_cursor` page,
+newest first; limits are 1–200. Summaries omit results, errors, and cancellation
+intent. Use `inspect_job` for those details and bounded `read_job_logs` pages to
+reconnect. See [job discovery](guides/jobs.md#discovering-jobs) for cursor and
+changing-history semantics.
 
 The execution, write, and copy tools accept `background=true` and return a
 response whose `mode` is `completed` or `submitted`. Submitted responses contain

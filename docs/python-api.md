@@ -17,6 +17,19 @@ ridge.copy("project-files:README.md", "artifacts:README.md")
 page = ridge.list_data("artifacts", limit=20)
 ```
 
+Job discovery returns a `JobPage` containing `JobSummary` values:
+
+```python
+page = ridge.list_jobs(limit=20)
+for job in page.jobs:
+    print(job.id, job.status)
+if page.next_cursor is not None:
+    page = ridge.list_jobs(limit=20, cursor=page.next_cursor)
+```
+
+Use `ridge.inspect_job(job_id)` for results and errors. See
+[job discovery](guides/jobs.md#discovering-jobs) for ordering, bounds, and policy changes.
+
 The top-level `ridge` exports are the supported convenience API. The
 `ridge.resource`, `ridge.provider`, `ridge.model`, and `ridge.conformance`
 modules are also public extension surfaces for provider authors. Other modules,
