@@ -155,56 +155,53 @@ transfers alone do not prove failure cleanup.
   and the commit briefly. Never push or rewrite history without explicit user
   authorization; a commit does not authorize publication.
 
-### Parallel agents and worktrees
+### Task lifecycle: isolate, verify, integrate, clean up
 
-- Use a dedicated Git worktree and task branch for each independent editing
-  task by default. Reuse the current worktree when it already belongs to the
-  task; read-only investigations do not require a separate worktree. An explicit
-  user request to work in a particular checkout takes precedence.
-- Before editing, inspect the current path, branch, worktree list, and working
-  tree status. Create new task worktrees from an identified committed base;
-  uncommitted work in another checkout is not included. Do not move, stash,
-  stage, or commit another agent's work, or switch its checkout's branch.
-- Run edits, checks, and commits in the task worktree. Verify that IDE tools
-  and interpreters target that worktree too; use explicit paths when needed.
-  Set up its own environment with the documented tools. Ignored files and
-  optional local context are not automatically copied; do not copy credentials
-  or rely on another worktree's mutable virtual environment.
-- Worktrees isolate working files and staging areas, not all resources: Git
-  refs are shared, and ports, services, external targets, and any shared local
-  notes still need coordination. Do not modify or delete another task's branch
-  or worktree. Read-only helpers may share a task worktree; concurrent editing
-  helpers require explicitly coordinated file ownership or separate worktrees.
-- Finishing a task includes local integration of its verified commits; agents
-  may integrate their own completed branches without asking again. Use the
-  primary checkout as the integration checkout unless the maintainer designates
-  another. Do not integrate into a checkout in use for another editing task.
-- Serialize integration with `scripts/with_integration_lock.py`: run it with the
-  project's Python interpreter from the integration checkout, followed by `--`
-  and the command to run. It holds an OS lock at `ridge-integration.lock` in
-  Git's common directory, shared by all worktrees. Hold it across target/status
-  rechecks, integration, combined verification, and any authorized push. Use one
-  wrapped command or script for that whole sequence, not separate lock calls.
-  Never delete the lock file or treat its existence as evidence of ownership;
-  the OS releases ownership when the holder and inherited holders exit.
-- The wrapper waits up to 30 seconds and exits 75 if busy. Wait and retry rather
-  than handing off immediately; report a blocker only when safe progress is not
-  possible. All agents modifying the integration checkout must use this lock;
-  it cannot coordinate tools that bypass it.
-- After acquiring the lock, recheck the target branch, clean working tree,
-  current target HEAD, and commits being integrated. Fast-forward when possible;
-  otherwise merge without rewriting history. Review combined behavior even when
-  Git reports no conflicts and run checks appropriate to the combined changes.
-  Resolve mechanical conflicts within the approved scope; ask about conflicting
-  intent or material design decisions. Do not push if verification fails, and
-  report the preserved local state rather than resetting others' work.
-- Report the task commit, checks, integration result, and anything still pending.
-  Local integration does not authorize a push; publication still requires an
-  explicit user request. A rejected push is not permission to force-push.
-- Never automatically relocate an already-running agent. Retain a worktree
-  while it is in use or has unpreserved work; remove it only after verifying
-  its changes are safely preserved and no agent is using it. Do not force
-  cleanup. Existing push and history-rewrite restrictions still apply.
+1. **Isolate.** Inspect the path, branch, worktree list, and working tree status.
+   Use a dedicated worktree and task branch from an identified committed base
+   for each independent editing task; reuse a checkout already owned by the task.
+   Read-only investigations need no new worktree; an explicit user choice of
+   checkout takes precedence. Never relocate a running agent, switch its branch,
+   or move, stash, stage, or commit its work. Worktrees do not isolate Git refs,
+   ports, services, external targets, or shared notes. Editing helpers need
+   separate worktrees or explicit file ownership; read-only helpers may share.
+2. **Implement and verify.** Edit, check, and commit in the task worktree using
+   the change and verification rules above. Ensure IDE tools and interpreters
+   target that checkout, with its own environment. Do not copy credentials or
+   rely on another checkout's mutable environment; ignored files and optional
+   context are not automatically copied.
+3. **Integrate.** Finishing includes local integration, without another approval
+   round. Use the primary checkout unless another is designated; it must be clean
+   and not in use for another editing task. Run `scripts/with_integration_lock.py`
+   with the project's Python interpreter from that checkout, followed by `--`
+   and a command or script covering the entire integration sequence. Its OS lock
+   at `ridge-integration.lock` in Git's common directory is shared by worktrees.
+   Hold it across status/target rechecks, integration, combined checks, cleanup,
+   and any authorized push. Never delete the lock file or infer ownership from
+   its existence; ownership ends when its process holders exit. Exit 75 means
+   the 30-second wait elapsed: wait and retry, not an immediate handoff.
+   Under the lock, recheck the branch, clean status, target HEAD, and incoming
+   commits. Fast-forward when possible; otherwise merge without rewriting history.
+   Review combined behavior even without conflicts and run appropriate checks.
+   Resolve mechanical conflicts in scope; ask about conflicting intent or material
+   decisions. On failure, preserve and report local state; do not push or reset
+   others' work. All integration-checkout writers must participate in this lock.
+4. **Clean up.** After successful integration and verification, leave the task
+   checkout and remove its inactive worktree with `git worktree remove PATH`.
+   First inspect tracked, untracked, and ignored files; preserve user data and
+   needed evidence. Inspected disposable environments, build output, and caches
+   may go with the worktree. Never force worktree removal. Then confirm no
+   worktree uses the task branch and its work is integrated into the intended
+   target, and delete it with `git branch -d BRANCH`. Do not retain integrated
+   task branches merely as backups. If squash/cherry-pick integration makes normal
+   deletion refuse, verify all changes are preserved and obtain explicit approval
+   before forced branch deletion. A `codex/` prefix or clean status is not proof.
+   Cleanup covers only the agent's own completed task unless the user authorizes
+   a wider sweep. Do not delete remote branches, active tasks, or the primary
+   checkout; retain unintegrated or unpreserved work and explain why.
+5. **Report.** State the commit, checks, integration and cleanup results, and
+   anything retained. Local integration and cleanup do not authorize a push;
+   publication, force-pushing, and history rewriting require explicit permission.
 
 ### Evidence-first collaboration
 
