@@ -5,9 +5,9 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 
-from ridge.backends._helper import HELPER_SOURCE, HelperOperations, HelperTransportResult
+from ridge.backends._helper import HelperOperations, HelperTransportResult
+from ridge.backends._source import HELPER_SOURCE, TRANSFER_HELPER_SOURCE
 from ridge.backends._transfer import ProcessTransferOperations
-from ridge.backends._transfer_helper import TRANSFER_HELPER_SOURCE
 from ridge.errors import InvalidPathError, PathTypeError, ResourceUnavailableError
 from ridge.model import (
     ExecResult,

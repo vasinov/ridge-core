@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from ridge.backends._helper import HELPER_SOURCE
+from ridge.backends._source import HELPER_SOURCE
 from ridge.backends.docker import DockerResource
 from ridge.errors import ExecutionTimeoutError, InvalidPathError, ResourceUnavailableError
 from ridge.registry import ResourceRegistry

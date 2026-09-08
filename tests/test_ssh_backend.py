@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from ridge.backends._helper import HELPER_SOURCE
+from ridge.backends._source import HELPER_SOURCE
 from ridge.backends.ssh import SshResource
 from ridge.errors import InvalidPathError, ResourceUnavailableError
 from ridge.registry import ResourceRegistry

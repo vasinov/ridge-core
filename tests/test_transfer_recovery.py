@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ridge.backends._transfer_helper import TRANSFER_HELPER_SOURCE
+from ridge.backends._source import TRANSFER_HELPER_SOURCE
 from ridge.backends.local import LocalResource
 from ridge.errors import ResourceUnavailableError, TransferError, format_error
 from ridge.model import CopyRequest, ResourceLocation

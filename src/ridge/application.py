@@ -402,31 +402,41 @@ class RidgeService:
             assert target.filesystem is not None
             return target.filesystem.stat(path)
 
-    def copy(
-        self, source: str | ResourceLocation, destination: str | ResourceLocation
-    ) -> CopyResult:
+    def _prepare_copy(
+        self,
+        source: str | ResourceLocation,
+        destination: str | ResourceLocation,
+        *,
+        background: bool = False,
+    ) -> tuple[CopyRequest, tuple[JobScope, ...]]:
         source_location = ResourceLocation.parse(source) if isinstance(source, str) else source
         destination_location = (
             ResourceLocation.parse(destination) if isinstance(destination, str) else destination
         )
+        context: dict[str, object] = {"background": True} if background else {}
         self._transfer(
             source_location.resource,
             Operation.DATA_READ,
-            {"path": source_location.path, "destination": destination_location},
+            {**context, "path": source_location.path, "destination": destination_location},
         )
         self._transfer(
             destination_location.resource,
             Operation.DATA_WRITE,
-            {"path": destination_location.path, "source": source_location},
+            {**context, "path": destination_location.path, "source": source_location},
         )
         request = CopyRequest(source=source_location, destination=destination_location)
         validate_copy_locations(self._registry, request)
-        with self._operation(
-            (
-                JobScope(source_location.resource, Operation.DATA_READ),
-                JobScope(destination_location.resource, Operation.DATA_WRITE),
-            )
-        ):
+        scopes = (
+            JobScope(source_location.resource, Operation.DATA_READ),
+            JobScope(destination_location.resource, Operation.DATA_WRITE),
+        )
+        return request, scopes
+
+    def copy(
+        self, source: str | ResourceLocation, destination: str | ResourceLocation
+    ) -> CopyResult:
+        request, scopes = self._prepare_copy(source, destination)
+        with self._operation(scopes):
             return copy(self._registry, request)
 
     def submit_copy(
@@ -436,42 +446,14 @@ class RidgeService:
         *,
         idempotency_key: str | None = None,
     ) -> Job:
-        source_location = ResourceLocation.parse(source) if isinstance(source, str) else source
-        destination_location = (
-            ResourceLocation.parse(destination) if isinstance(destination, str) else destination
-        )
-        self._transfer(
-            source_location.resource,
-            Operation.DATA_READ,
-            {
-                "path": source_location.path,
-                "destination": destination_location,
-                "background": True,
-            },
-        )
-        self._transfer(
-            destination_location.resource,
-            Operation.DATA_WRITE,
-            {
-                "path": destination_location.path,
-                "source": source_location,
-                "background": True,
-            },
-        )
-        validate_copy_locations(
-            self._registry, CopyRequest(source=source_location, destination=destination_location)
-        )
-        scopes = (
-            JobScope(source_location.resource, Operation.DATA_READ),
-            JobScope(destination_location.resource, Operation.DATA_WRITE),
-        )
+        request, scopes = self._prepare_copy(source, destination, background=True)
         self._reconcile_jobs()
         return self._job_manager().submit(
             JobKind.COPY,
             scopes,
             {
-                "source": f"{source_location.resource}:{source_location.path}",
-                "destination": f"{destination_location.resource}:{destination_location.path}",
+                "source": f"{request.source.resource}:{request.source.path}",
+                "destination": f"{request.destination.resource}:{request.destination.path}",
             },
             idempotency_key=idempotency_key,
             lock_token=self._operation_token(),

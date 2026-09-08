@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from ridge._job_process import in_job_worker
-from ridge.backends._transfer_helper import TRANSFER_HELPER_SOURCE
+from ridge.backends._source import TRANSFER_HELPER_SOURCE
 from ridge.backends.docker import DockerResource
 from ridge.backends.local import LocalResource
 from ridge.backends.ssh import SshResource

@@ -17,6 +17,12 @@ documentation under `docs`. Read the root contributor instructions and
 [architecture](architecture.md) before changing contracts. The public checkout
 is sufficient; maintainer-local planning or environment files are not required.
 
+Edit ephemeral helpers in `src/ridge/backends/_scripts` as ordinary Python source;
+linting and type checking cover these files. Keep them standard-library-only and
+safe to import without dispatch. After changing source delivery, verify that the
+built wheel contains the helpers and exercise an installed package outside the
+checkout, as well as the affected Docker/SSH transports.
+
 For material changes, also run bounded realistic examples through CLI/MCP and
 inspect outputs and side effects. Docker needs a running daemon and a worker
 image with Python. SSH needs an existing POSIX account, Python, noninteractive

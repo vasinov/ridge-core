@@ -10,8 +10,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import BinaryIO
 
+from ridge.backends._source import TRANSFER_HELPER_SOURCE
 from ridge.backends._transfer import ProcessTransferOperations
-from ridge.backends._transfer_helper import TRANSFER_HELPER_SOURCE
 from ridge.errors import (
     ExecutionError,
     ExecutionTimeoutError,

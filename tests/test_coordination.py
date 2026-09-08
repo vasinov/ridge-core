@@ -238,7 +238,7 @@ def test_background_submission_and_claim_are_atomic_and_idempotent(
     assert owned.submit_write("a", "yes", b"yes", idempotency_key="one").id == job.id
     assert service.inspect_lock(job.id)["job_id"] == job.id
     assert service.release_locks(_token(session))["status"] == "closing"
-    service._job_manager().finish(job.id, JobStatus.CANCELLED)
+    service._job_manager().finish(job.id, JobStatus.CANCELLED, local_termination_verified=True)
     assert service.inspect_lock(job.id)["status"] == "released"
     assert service.inspect_lock(str(session["id"]))["status"] == "released"
 
@@ -293,7 +293,7 @@ def test_remote_cancellation_is_not_resource_termination(
     connection.execute("UPDATE lock_operations SET local_only = 0 WHERE id = ?", (job.id,))
     connection.commit()
     connection.close()
-    manager.finish(job.id, JobStatus.CANCELLED)
+    manager.finish(job.id, JobStatus.CANCELLED, local_termination_verified=True)
     assert service.inspect_lock(job.id)["status"] == "uncertain"
 
 

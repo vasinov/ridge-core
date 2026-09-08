@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ridge.backends._helper import HELPER_SOURCE
+from ridge.backends._source import HELPER_SOURCE
 
 LOCAL_READ = """
 from ridge.backends.local import LocalResource

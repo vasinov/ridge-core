@@ -1,6 +1,7 @@
 """Inspect real staging artifacts across ordinary interruption and uncertain stops."""
 
 # pyright: reportPrivateUsage=false
+import io
 import json
 import os
 import signal
@@ -9,14 +10,15 @@ import sys
 import time
 from pathlib import Path
 from typing import BinaryIO, Literal, cast
+from unittest.mock import Mock
 
 import anyio
 import pytest
 from mcp import Client, StdioServerParameters
 from mcp.types import CallToolResult
 
-from ridge.backends._transfer import ProcessTransferDestination
-from ridge.backends._transfer_helper import TRANSFER_HELPER_SOURCE
+from ridge.backends._source import TRANSFER_HELPER_SOURCE
+from ridge.backends._transfer import ProcessTransferDestination, _PublicationState, _StagingState
 from ridge.backends.local import LocalResource
 from ridge.errors import ResourceUnavailableError, TransferError, format_error
 from ridge.model import CopyRequest, ResourceLocation, TransferPayloadKind
@@ -405,3 +407,86 @@ ProcessTransferSource.read = read
     assert source.read_bytes() == b"x" * 524288
     assert not (target_root / "new").exists()
     assert not list(target_root.glob("**/.ridge-transfer-*"))
+
+
+def process_destination() -> tuple[ProcessTransferDestination, Mock]:
+    process = Mock(spec=subprocess.Popen)
+    process.stdin = io.BytesIO()
+    process.stdout = io.BytesIO()
+    process.stderr = io.BytesIO()
+    process.returncode = 0
+    process.wait.return_value = 0
+    control = Mock()
+    stream = ProcessTransferDestination(process, "target", control)
+    stream._token = "stage"
+    return stream, control
+
+
+@pytest.mark.parametrize("state", list(_StagingState))
+def test_staging_evidence_gates_publication_and_cleanup(state: _StagingState) -> None:
+    stream, control = process_destination()
+    stream._staging = state
+    if state is _StagingState.FINISHED:
+        stream.commit()
+        assert stream._publication is _PublicationState.PUBLISHED
+        with pytest.raises(TransferError, match="retried"):
+            stream.commit()
+        stream.abort()
+        control.assert_called_once_with("commit", {"token": "stage"})
+    else:
+        with pytest.raises(TransferError, match="finished staging"):
+            stream.commit()
+        if state is _StagingState.UNCONFIRMED:
+            with pytest.raises(TransferError, match="unconfirmed staging"):
+                stream.abort()
+            control.assert_not_called()
+        else:
+            stream.abort()
+            control.assert_called_once_with("abort", {"token": "stage"})
+
+
+@pytest.mark.parametrize(
+    "error", [TransferError("failed"), ResourceUnavailableError("lost"), KeyboardInterrupt()]
+)
+def test_publication_failure_distinguishes_acknowledgement_from_uncertainty(
+    error: BaseException,
+) -> None:
+    stream, control = process_destination()
+    stream._staging = _StagingState.FINISHED
+    control.side_effect = error
+    with pytest.raises(type(error)):
+        stream.commit()
+    with pytest.raises(TransferError, match="retried"):
+        stream.commit()
+    control.side_effect = None
+    if isinstance(error, TransferError):
+        assert stream._publication is _PublicationState.FAILED
+        stream.abort()
+        assert control.call_count == 2
+    else:
+        assert stream._publication is _PublicationState.UNCONFIRMED
+        with pytest.raises(TransferError, match="unconfirmed publication"):
+            stream.abort()
+        assert control.call_count == 1
+
+
+def test_stopped_report_is_not_successful_staging() -> None:
+    stream, _ = process_destination()
+    with pytest.raises(TransferError):
+        stream._completion(b'{"ok":false,"token":"stage","stopped":true}', b"")
+    assert stream._staging is _StagingState.STOPPED
+    with pytest.raises(TransferError, match="finished staging"):
+        stream.commit()
+
+
+def test_cancellation_prevents_publication_even_after_successful_staging() -> None:
+    stream, control = process_destination()
+    stream._completion(
+        b'{"ok":true,"token":"stage","stopped":true,"bytes_copied":0,"entries_copied":1}', b""
+    )
+    stream._reports_collected = True
+    stream.cancel()
+    with pytest.raises(TransferError, match="finished staging"):
+        stream.commit()
+    stream.abort()
+    control.assert_called_once_with("abort", {"token": "stage"})

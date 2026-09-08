@@ -6,6 +6,7 @@ import json
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
+from enum import Enum, auto
 from typing import BinaryIO, cast
 
 from ridge._job_process import in_job_worker
@@ -106,6 +107,20 @@ class ProcessTransferSource(_Process, TransferSource):
             self._stderr.close()
 
 
+class _StagingState(Enum):
+    # These describe evidence received from the writer, not its persisted phase.
+    UNCONFIRMED = auto()
+    STOPPED = auto()
+    FINISHED = auto()
+
+
+class _PublicationState(Enum):
+    NOT_ATTEMPTED = auto()
+    FAILED = auto()
+    UNCONFIRMED = auto()
+    PUBLISHED = auto()
+
+
 class ProcessTransferDestination(_Process, TransferDestination):
     def __init__(
         self,
@@ -121,12 +136,10 @@ class ProcessTransferDestination(_Process, TransferDestination):
         self._stderr = cast(BinaryIO, process.stderr)
         self._invoke_control = invoke_control
         self._token: str | None = None
-        self._staging_stopped = False
-        self._finished = False
-        self._collected = False
+        self._staging = _StagingState.UNCONFIRMED
+        self._reports_collected = False
         self._cancelled = False
-        self._commit_attempted = False
-        self._commit_uncertain = False
+        self._publication = _PublicationState.NOT_ATTEMPTED
 
     @staticmethod
     def _response(content: bytes) -> dict[str, object]:
@@ -142,7 +155,7 @@ class ProcessTransferDestination(_Process, TransferDestination):
         line = self._stdout.readline(64 * 1024)
         if not line:
             _, stderr = self.process.communicate(timeout=2)
-            self._collected = True
+            self._reports_collected = True
             self._stdin = None
             self._wait(stderr)
         payload = self._response(line)
@@ -170,11 +183,11 @@ class ProcessTransferDestination(_Process, TransferDestination):
             raise TransferError("transfer destination stopped accepting content") from exc
 
     def finish(self) -> tuple[int, int]:
-        if self._collected:
+        if self._reports_collected:
             raise TransferError("transfer destination is already closed")
         self._stdin = None
         stdout, stderr = self.process.communicate()
-        self._collected = True
+        self._reports_collected = True
         return self._completion(stdout, stderr)
 
     def _completion(self, stdout: bytes, stderr: bytes) -> tuple[int, int]:
@@ -193,7 +206,7 @@ class ProcessTransferDestination(_Process, TransferDestination):
                 raise error from acknowledgement_error
             raise
         try:
-            self._staging_stopped = True
+            self._staging = _StagingState.STOPPED
             self._wait(stderr)
             if payload.get("ok") is not True:
                 raise TypeError
@@ -208,41 +221,41 @@ class ProcessTransferDestination(_Process, TransferDestination):
                 raise TypeError
         except (KeyError, TypeError) as exc:
             raise TransferError("invalid response from transfer destination") from exc
-        self._finished = True
+        self._staging = _StagingState.FINISHED
         return bytes_copied, entries_copied
 
     def commit(self) -> None:
-        if self._commit_attempted:
+        if self._publication is not _PublicationState.NOT_ATTEMPTED:
             raise TransferError("publication cannot be retried")
-        if self._token is None or not self._finished or self._cancelled:
+        if self._token is None or self._staging is not _StagingState.FINISHED or self._cancelled:
             raise TransferError("transfer destination has not finished staging")
-        self._commit_attempted = True
+        self._publication = _PublicationState.UNCONFIRMED
         try:
             self._invoke_control("commit", {"token": self._token})
         except BaseException as error:
             # A helper-reported failure has completed. A broken transport or
             # interrupted caller cannot establish whether publication is ongoing.
-            self._commit_uncertain = isinstance(error, ResourceUnavailableError) or not isinstance(
-                error, RidgeError
-            )
-            if self._commit_uncertain:
+            if isinstance(error, ResourceUnavailableError) or not isinstance(error, RidgeError):
                 error.add_note(
                     f"resource {self.resource_name!r}: publication outcome unconfirmed; "
                     f"inspect destination and any remaining staging at {self._token}; "
                     "automatic cleanup was not attempted"
                 )
+            else:
+                self._publication = _PublicationState.FAILED
             raise
+        self._publication = _PublicationState.PUBLISHED
         self._token = None
 
     def abort(self) -> None:
         if self._token is None:
             return
-        if not self._staging_stopped:
+        if self._staging is _StagingState.UNCONFIRMED:
             raise TransferError(
                 f"resource {self.resource_name!r}: cleanup refused after unconfirmed staging; "
                 f"inspect any remaining staging at {self._token}"
             )
-        if self._commit_uncertain:
+        if self._publication is _PublicationState.UNCONFIRMED:
             raise TransferError(
                 f"resource {self.resource_name!r}: cleanup refused after unconfirmed publication; "
                 f"inspect any remaining staging at {self._token}"
@@ -259,14 +272,14 @@ class ProcessTransferDestination(_Process, TransferDestination):
 
     def cancel(self) -> None:
         self._cancelled = True
-        if self._collected:
+        if self._reports_collected:
             return
         self._stdin = None
         try:
             # Unbuffered input closes without flushing a blocked payload write.
             # communicate drains both report pipes within the grace period.
             stdout, stderr = self.process.communicate(timeout=2)
-            self._collected = True
+            self._reports_collected = True
             self._completion(stdout, stderr)
         except subprocess.TimeoutExpired as error:
             raise TransferError(
@@ -274,7 +287,7 @@ class ProcessTransferDestination(_Process, TransferDestination):
                 f"inspect any remaining staging at {self._token or 'unknown path'}"
             ) from error
         finally:
-            self._collected = True
+            self._reports_collected = True
             self._stop()
             for stream in (self.process.stdin, self._stdout, self._stderr):
                 if stream is not None:

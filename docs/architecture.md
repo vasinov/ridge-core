@@ -24,7 +24,12 @@ changing Ridge core.
   `config` validates the inventory envelope and asks the selected provider to
   validate and construct each resource.
 - `application` owns frontend-neutral workflows, capability selection,
-  authorization, and copy coordination over a registry.
+  authorization, and copy coordination over a registry. Foreground and background
+  copy share location parsing, authorization context, validation, and scope
+  preparation; workers revalidate before execution.
+- `jobs` owns durable job metadata and atomic completion/claim settlement;
+  `_job_runner` owns the supervisor, worker, and internal process entry point.
+  `_job_process` shares process-local ownership context and handoff timing/encoding.
 - `cli` and `mcp` are separate frontends over `application`; backend classes do
   not depend on either. Typer owns command declaration and the official MCP
   Python SDK owns stdio protocol behavior.
@@ -88,6 +93,9 @@ changing Ridge core.
   capability operations are shared by Docker and SSH. Each resource owns only
   its transport, configuration, inspection, and availability behavior. This is
   the internal transport seam beneath the public capability and provider API.
+  Standalone Python files under `backends/_scripts` are packaged and loaded as
+  source without host-side execution. They use only the standard library and
+  run through the configured target Python; targets do not need Ridge installed.
 - Cross-resource copy is a coordinator operation over two resource locations,
   not a capability attributed to either endpoint. Files stream as raw bytes;
   directory trees use an uncompressed tar stream. The standard library owns
@@ -112,17 +120,21 @@ changing Ridge core.
   disposable persisted phase, and always preserves retained backups. SIGTERM during
   receiving allows the helper to record failed staging and report its stop.
   Phase metadata supports manual recovery, not power-loss transactional durability.
+  The transport tracks staging evidence (unconfirmed, stopped, finished) separately
+  from publication (not attempted, failed, unconfirmed, published). Collected pipes
+  and caller cancellation are independent of these outcomes. A stop report alone
+  permits neither publication nor deletion of a protected persisted phase.
   The [copying guide](guides/copying.md) owns recovery instructions.
 - Tree copy accepts regular files, directories, and relative symbolic links
   whose resolved targets exist inside the copied tree. It rejects absolute,
   broken, escaping, and top-level links, plus hard links and special files.
   Basic permission bits are preserved; ownership, timestamps, ACLs, extended
   attributes, sparsity, and other metadata are not.
-- Copy has no arbitrary total-size or wall-clock limit. Streaming bounds content
-  memory, the source snapshot bounds the expected payload, transport connection
-  timeouts still apply, and caller cancellation aborts staged content. MCP bounds
-  model-facing results rather than changing copy semantics; transfer budgets
-  remain deferred until a workflow demonstrates a need.
+- The copy coordinator adds no total-size or wall-clock limit; backend limits
+  still apply. Streaming bounds payload memory. File exports read to EOF and then
+  verify the source snapshot; tree members use snapshotted sizes. Connection
+  timeouts still apply, and cancellation follows the acknowledged-cleanup rules
+  above. MCP bounds model-facing results rather than changing copy semantics.
 - Identity-aware and contextual authorization remains deferred. The trust model,
   resource path boundary, and exact process-scoped permission policy are current
   product behavior rather than security polish.
@@ -342,6 +354,10 @@ exception notes through CLI/MCP serialization and job outcomes. Cancellation
 preserves reported worker diagnostics after shutdown. Cleanup failures remain
 visible in `error`; uncertain termination retains staged payloads. Supervisor
 loss does not trigger speculative signalling.
+Completion receives an explicit local-termination assessment. Verified shutdown or
+a fenced unstarted attempt permits payload cleanup but does not imply remote termination.
+Cleanup failure does not erase verified termination; remote failures still retain
+claims. Job outcome and claim settlement remain in the same SQLite transaction.
 There is no claim of rollback, remote termination, or containment of deliberately
 detached processes. See [job limitations](guides/jobs.md#current-limitations).
 

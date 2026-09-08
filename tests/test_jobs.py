@@ -15,7 +15,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ridge import jobs
+from ridge import _job_runner as runner
 from ridge.application import RidgeService
 from ridge.authorization import AuthorizationPolicy
 from ridge.backends.local import LocalResource
@@ -215,7 +215,7 @@ def _unstarted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[JobMana
         return None
 
     with monkeypatch.context() as patch:
-        patch.setattr(jobs.subprocess, "Popen", no_spawn)
+        patch.setattr(runner.subprocess, "Popen", no_spawn)
         job = manager.submit(
             JobKind.WRITE,
             (JobScope("local", Operation.DATA_WRITE),),
@@ -244,7 +244,7 @@ def _run_worker(manager: JobManager, job_id: str) -> dict[str, object]:
     old_job = current_job.get()
     old_worker = in_job_worker.get()
     try:
-        assert jobs._work(manager.directory, job_id, read_gate) == 0
+        assert runner._work(manager.directory, job_id, read_gate) == 0
     finally:
         signal.signal(signal.SIGTERM, handler)
         current_job.set(old_job)
@@ -283,7 +283,7 @@ def test_worker_persists_cleanup_notes(
     from ridge.errors import TransferError
 
     manager, job_id = _unstarted(tmp_path, monkeypatch)
-    error = jobs._Cancelled() if cancelled else TransferError("publication failed")
+    error = runner._Cancelled() if cancelled else TransferError("publication failed")
     error.add_note("retained staging: target:.ridge-transfer-fixture; rollback failed")
     monkeypatch.setattr(RidgeService, "write_data", Mock(side_effect=error))
     outcome = _run_worker(manager, job_id)
@@ -299,29 +299,29 @@ def test_supervisor_keeps_worker_diagnostics_when_cancellation_wins(
     launch = subprocess.Popen
     worker_script = r"""
 import sys
-from ridge import jobs
+from ridge import _job_runner as runner
 from ridge.application import RidgeService
 
 def cancelled_write(self, *args, **kwargs):
-    error = jobs._Cancelled()
+    error = runner._Cancelled()
     error.add_note("destination cleanup failed; retained target:.ridge-transfer-cancel/replaced")
     raise error
 
 RidgeService.write_data = cancelled_write
-raise SystemExit(jobs._work(jobs.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])))
+raise SystemExit(runner._work(runner.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])))
 """
 
     def launch_worker(argv: tuple[str, ...], **kwargs: object) -> subprocess.Popen[bytes]:
-        if len(argv) > 3 and argv[1:4] == ("-m", "ridge.jobs", "work"):
+        if len(argv) > 3 and argv[1:4] == ("-m", "ridge._job_runner", "work"):
             argv = (sys.executable, "-c", worker_script, *argv[4:])
         return launch(argv, **kwargs)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
 
-    monkeypatch.setattr(jobs.subprocess, "Popen", launch_worker)
-    load_manager = jobs._load_manager
+    monkeypatch.setattr(runner.subprocess, "Popen", launch_worker)
+    load_manager = runner._load_manager
 
     def cancel_after_worker_report(
         directory: Path, identity: str
-    ) -> tuple[JobManager, jobs.sqlite3.Row]:
+    ) -> tuple[JobManager, runner.sqlite3.Row]:
         if (directory / identity / "outcome.json").exists():
             with manager.connect() as connection:
                 connection.execute(
@@ -329,8 +329,8 @@ raise SystemExit(jobs._work(jobs.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]
                 )
         return load_manager(directory, identity)
 
-    monkeypatch.setattr(jobs, "_load_manager", cancel_after_worker_report)
-    assert jobs._run(manager.directory, job_id) == 0
+    monkeypatch.setattr(runner, "_load_manager", cancel_after_worker_report)
+    assert runner._run(manager.directory, job_id) == 0
     inspected = manager.get(job_id)
     assert inspected.status is JobStatus.CANCELLED
     assert "target:.ridge-transfer-cancel/replaced" in str(inspected.error)
@@ -346,11 +346,11 @@ def test_expired_start_is_lost_and_late_supervisor_cannot_write(
     assert manager.get(job_id).status is JobStatus.STARTING
     _expire(manager, job_id)
     # Even without a prior observer, the supervisor itself must enforce expiry.
-    assert jobs._run(manager.directory, job_id) == 0
+    assert runner._run(manager.directory, job_id) == 0
     assert manager.get(job_id).status is JobStatus.LOST
     assert not (tmp_path / "output").exists()
     assert not (manager.directory / job_id / "payload.bin").exists()
-    assert jobs._run(manager.directory, job_id) == 0
+    assert runner._run(manager.directory, job_id) == 0
 
 
 def test_idempotent_retry_reconciles_expired_start(
@@ -393,7 +393,7 @@ def test_cancel_before_start_fences_late_supervisor(
 ) -> None:
     manager, job_id = _unstarted(tmp_path, monkeypatch)
     assert manager.cancel(job_id).status is JobStatus.CANCELLED
-    assert jobs._run(manager.directory, job_id) == 0
+    assert runner._run(manager.directory, job_id) == 0
     assert not (tmp_path / "output").exists()
 
 
@@ -406,7 +406,7 @@ def test_live_owner_prevents_reconciliation_and_duplicate_supervision(
     with (manager.directory / job_id / "owner.lock").open("a+b") as owner:
         fcntl.flock(owner, fcntl.LOCK_EX)
         assert manager.get(job_id).status is JobStatus.STARTING
-        assert jobs._run(manager.directory, job_id) == 0
+        assert runner._run(manager.directory, job_id) == 0
     assert manager.get(job_id).status is JobStatus.LOST
 
 
@@ -418,7 +418,7 @@ def test_observer_lock_does_not_discard_supervisor_launch(
     with (manager.directory / job_id / "owner.lock").open("a+b") as observer:
         fcntl.flock(observer, fcntl.LOCK_EX)
         supervisor = subprocess.Popen(
-            [sys.executable, "-m", "ridge.jobs", "run", str(manager.directory), job_id]
+            [sys.executable, "-m", "ridge._job_runner", "run", str(manager.directory), job_id]
         )
         time.sleep(0.3)
         assert supervisor.poll() is None
@@ -432,7 +432,9 @@ def test_completed_result_wins_late_cancellation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager, job_id = _unstarted(tmp_path, monkeypatch)
-    assert manager.finish(job_id, JobStatus.SUCCEEDED, result={"bytes_written": 6})
+    assert manager.finish(
+        job_id, JobStatus.SUCCEEDED, local_termination_verified=True, result={"bytes_written": 6}
+    )
     original = manager.get(job_id)
     assert manager.cancel(job_id) == original
     assert not original.cancellation_requested
@@ -463,11 +465,15 @@ def test_cancellation_wins_completion_and_terminal_result_is_immutable(
     manager, job_id = _unstarted(tmp_path, monkeypatch)
     with manager.connect() as connection:
         connection.execute("UPDATE jobs SET cancellation_requested = 1 WHERE id = ?", (job_id,))
-    assert not manager.finish(job_id, JobStatus.SUCCEEDED, result={"bytes_written": 6})
+    assert not manager.finish(
+        job_id, JobStatus.SUCCEEDED, local_termination_verified=True, result={"bytes_written": 6}
+    )
     assert (manager.directory / job_id / "payload.bin").exists()
-    assert manager.finish(job_id, JobStatus.CANCELLED)
+    assert manager.finish(job_id, JobStatus.CANCELLED, local_termination_verified=True)
     original = manager.get(job_id)
-    assert not manager.finish(job_id, JobStatus.FAILED, error="late failure")
+    assert not manager.finish(
+        job_id, JobStatus.FAILED, local_termination_verified=True, error="late failure"
+    )
     assert manager.cancel(job_id) == original
 
 
@@ -485,7 +491,9 @@ def test_cleanup_failure_is_visible_without_rewriting_operation_result(
         unlink(path, missing_ok=missing_ok)
 
     monkeypatch.setattr(Path, "unlink", deny)
-    assert manager.finish(job_id, JobStatus.SUCCEEDED, result={"bytes_written": 6})
+    assert manager.finish(
+        job_id, JobStatus.SUCCEEDED, local_termination_verified=True, result={"bytes_written": 6}
+    )
     job = manager.get(job_id)
     assert job.status is JobStatus.SUCCEEDED
     assert job.result == {"bytes_written": 6}
@@ -497,7 +505,7 @@ def test_closed_startup_gate_never_executes_work(tmp_path: Path) -> None:
     read_gate, write_gate = os.pipe()
     os.close(write_gate)
     # No config/job files even exist: the worker must exit before loading them.
-    assert jobs._work(tmp_path, "absent", read_gate) == 2
+    assert runner._work(tmp_path, "absent", read_gate) == 2
 
 
 def test_interrupted_payload_staging_rolls_back_and_removes_new_directory(
@@ -505,7 +513,7 @@ def test_interrupted_payload_staging_rolls_back_and_removes_new_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager, job_id = _unstarted(tmp_path, monkeypatch)
-    manager.finish(job_id, JobStatus.CANCELLED)
+    manager.finish(job_id, JobStatus.CANCELLED, local_termination_verified=True)
     before = set(manager.directory.iterdir())
     with monkeypatch.context() as patch:
         patch.setattr(Path, "open", Mock(side_effect=KeyboardInterrupt("interrupted staging")))
@@ -524,18 +532,55 @@ def test_ps_failure_is_not_proof_of_termination(monkeypatch: pytest.MonkeyPatch)
     def unavailable(*args: object, **kwargs: object) -> None:
         raise subprocess.TimeoutExpired("ps", 1)
 
-    monkeypatch.setattr(jobs.subprocess, "run", unavailable)
+    monkeypatch.setattr(runner.subprocess, "run", unavailable)
     with pytest.raises(subprocess.TimeoutExpired):
-        jobs._live_group(123)
+        runner._live_group(123)
+
+
+@pytest.mark.parametrize("local_only", [False, True])
+@pytest.mark.parametrize("verified", [False, True])
+@pytest.mark.parametrize("status", [JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED])
+def test_completion_uses_stop_evidence_not_payload_deletion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    local_only: bool,
+    verified: bool,
+    status: JobStatus,
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    with manager.connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET status = 'running', started_at = submitted_at WHERE id = ?", (job_id,)
+        )
+        connection.execute(
+            "UPDATE lock_operations SET local_only = ? WHERE id = ?", (local_only, job_id)
+        )
+    payload = manager.directory / job_id / "payload.bin"
+    unlink = Path.unlink
+
+    def deny_payload(path: Path, *, missing_ok: bool = False) -> None:
+        if path == payload:
+            raise OSError("injected cleanup failure")
+        unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", deny_payload)
+    assert manager.finish(job_id, status, local_termination_verified=verified)
+    job = manager.get(job_id)
+    assert job.status is status
+    assert payload.read_bytes() == b"staged"
+    assert bool(job.error and "cleanup failed" in job.error) is verified
+    claim = manager.coordination.inspect(job_id)
+    safe = verified and (local_only or status is JobStatus.SUCCEEDED)
+    assert claim["status"] == ("released" if safe else "uncertain")
 
 
 def test_stopped_group_is_reaped_without_signalling(monkeypatch: pytest.MonkeyPatch) -> None:
     process = Mock(spec=subprocess.Popen)
     process.pid = 123
-    monkeypatch.setattr(jobs, "_live_group", Mock(return_value=False))
+    monkeypatch.setattr(runner, "_live_group", Mock(return_value=False))
     signal_group = Mock(side_effect=AssertionError("must not signal an exited group"))
     monkeypatch.setattr(os, "killpg", signal_group)
-    assert jobs._stop_group(process)
+    assert runner._stop_group(process)
     process.wait.assert_called_once_with(timeout=1)
     signal_group.assert_not_called()
 
@@ -544,13 +589,13 @@ def test_signal_denial_requires_fresh_termination_evidence(monkeypatch: pytest.M
     process = Mock(spec=subprocess.Popen)
     process.pid = 123
     live = Mock(side_effect=[True, False])
-    monkeypatch.setattr(jobs, "_live_group", live)
+    monkeypatch.setattr(runner, "_live_group", live)
     monkeypatch.setattr(os, "killpg", Mock(side_effect=PermissionError("exited concurrently")))
-    assert jobs._stop_group(process)
+    assert runner._stop_group(process)
     assert live.call_count == 2
-    monkeypatch.setattr(jobs, "_live_group", Mock(return_value=True))
+    monkeypatch.setattr(runner, "_live_group", Mock(return_value=True))
     with pytest.raises(PermissionError):
-        jobs._stop_group(process)
+        runner._stop_group(process)
 
 
 def test_cancel_verifies_sigterm_resistant_descendant(tmp_path: Path) -> None:
@@ -580,7 +625,7 @@ def test_cancel_verifies_sigterm_resistant_descendant(tmp_path: Path) -> None:
         assert result.status is JobStatus.CANCELLED
         assert result.cancellation_requested
         assert time.monotonic() - started >= 4.5
-        assert not jobs._live_group(group)
+        assert not runner._live_group(group)
         assert service.read_job_log(job.id, "stdout").complete
     finally:
         if pid is not None:
@@ -590,3 +635,14 @@ def test_cancel_verifies_sigterm_resistant_descendant(tmp_path: Path) -> None:
                     os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+
+
+def test_job_process_entry_point_has_no_import_warning() -> None:
+    result = subprocess.run(
+        [sys.executable, "-W", "error::RuntimeWarning", "-m", "ridge._job_runner"],
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+    assert result.returncode == 2  # No internal run/work request was supplied.
+    assert result.stdout == result.stderr == b""
