@@ -6,7 +6,8 @@
 Give your AI agents one way to work with local files, Docker containers, SSH
 hosts, and S3. Ridge exposes named resources through a CLI and a local MCP
 server, so agents can discover what is available, move data, and run programs
-without assembling backend-specific plumbing.
+without assembling backend-specific plumbing. It also coordinates multiple agents
+on shared resources and keeps background jobs available for later inspection.
 
 ## From a request to a result
 
@@ -34,7 +35,7 @@ allowed operations before acting, then reads the small report to answer:
 
 The worker can be local, Docker, or SSH—the tool calls stay the same. Copies
 stream through Ridge; input files do not need to pass through the conversation.
-See the [agent walkthrough](docs/examples/csv-report.md#with-an-agent) for the
+See the [agent walkthrough](https://vasinov.github.io/ridge-core/examples/csv-report/#with-an-agent) for the
 decision points and background-job variant.
 
 ## Why Ridge?
@@ -51,7 +52,7 @@ decision points and background-job variant.
   that another client can inspect after submission.
 
 Coordination requires shared local Ridge state and matching resource lock keys;
-it does not exclude access outside Ridge. See [multi-agent coordination](docs/guides/coordination.md).
+it does not exclude access outside Ridge. See [multi-agent coordination](https://vasinov.github.io/ridge-core/guides/coordination/).
 
 ## The same workflow in your terminal
 
@@ -74,8 +75,8 @@ West,200.00
 ```
 
 Ridge loads `./ridge.yaml` by default; use `--config PATH` to choose another
-inventory. The [getting-started guide](docs/getting-started.md) provides a complete
-local setup with bundled inputs. Explore [more examples](docs/examples/index.md)
+inventory. The [getting-started guide](https://vasinov.github.io/ridge-core/getting-started/) provides a complete
+local setup with bundled inputs. Explore [more examples](https://vasinov.github.io/ridge-core/examples/)
 for ML experiments, builds, scientific computing, and media processing.
 
 ## Install and connect
@@ -103,7 +104,7 @@ default_tools_approval_mode = "writes"
 ```
 
 The local stdio server exposes the same operations and authorization as the CLI,
-with bounded inline reads and execution output. See [MCP setup and tools](docs/mcp.md).
+with bounded inline reads and execution output. See [MCP setup and tools](https://vasinov.github.io/ridge-core/mcp/).
 
 ## Resources and capabilities
 
@@ -114,21 +115,21 @@ with bounded inline reads and execution output. See [MCP setup and tools](docs/m
 | Copy workflow | all built-ins | streamed file/object copy; filesystem-only tree copy |
 
 Configure providers and exact operation grants in your inventory. Installed
-Python packages can add [resource providers](docs/providers.md).
+Python packages can add [resource providers](https://vasinov.github.io/ridge-core/providers/).
 
 Ridge is public-alpha software for one trusted operator with cooperating agents.
 Ridge grants control calls through Ridge; OS and service permissions determine
-downstream authority. Review the [security model](docs/security.md) when
-connecting resources. [Copying](docs/guides/copying.md) and
-[background jobs](docs/guides/jobs.md) cover replacement, recovery, and cancellation.
+downstream authority. Review the [security model](https://vasinov.github.io/ridge-core/security/) when
+connecting resources. [Copying](https://vasinov.github.io/ridge-core/guides/copying/) and
+[background jobs](https://vasinov.github.io/ridge-core/guides/jobs/) cover replacement, recovery, and cancellation.
 
 ## Documentation and development
 
 Browse the [documentation website](https://vasinov.github.io/ridge-core/), or start
-with [Configuration](docs/configuration.md), [CLI](docs/cli.md),
-[MCP](docs/mcp.md), and the [Python API](docs/python-api.md).
-See [Architecture](docs/architecture.md) for the design and
-[Development](docs/development.md) for setup and verification.
+with [Configuration](https://vasinov.github.io/ridge-core/configuration/), [CLI](https://vasinov.github.io/ridge-core/cli/),
+[MCP](https://vasinov.github.io/ridge-core/mcp/), and the [Python API](https://vasinov.github.io/ridge-core/python-api/).
+See [Architecture](https://vasinov.github.io/ridge-core/architecture/) for the design and
+[Development](https://vasinov.github.io/ridge-core/development/) for setup and verification.
 
 Feedback on real agent workflows, confusing resource semantics, and failures is
 welcome. Include your provider, a minimal reproduction, and expected versus
