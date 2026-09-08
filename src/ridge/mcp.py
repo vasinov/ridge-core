@@ -233,6 +233,8 @@ def _tool_errors(function: Callable[_P, _R]) -> Callable[_P, _R]:
 
 
 def _read_result(content: bytes) -> ContentResult:
+    if len(content) > _INLINE_CONTENT_BYTES:
+        return _too_large_result(len(content))
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:

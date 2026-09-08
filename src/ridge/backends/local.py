@@ -99,7 +99,11 @@ class _RootedFilesystem:
                 raise OutputLimitExceededError(
                     f"file is {size} bytes, exceeding the {max_bytes}-byte limit: {path}"
                 )
-        return target.read_bytes()
+        with target.open("rb") as stream:
+            content = stream.read() if max_bytes is None else stream.read(max_bytes + 1)
+        if max_bytes is not None and len(content) > max_bytes:
+            raise OutputLimitExceededError(f"file exceeds the {max_bytes}-byte limit: {path}")
+        return content
 
     def write(
         self,

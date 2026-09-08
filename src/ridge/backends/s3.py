@@ -294,7 +294,15 @@ class S3Resource:
             response = self.client.get_object(Bucket=self.bucket, Key=full_key)
             body = response["Body"]
             try:
-                return cast(bytes, body.read())
+                if max_bytes is None:
+                    return cast(bytes, body.read())
+                content = bytearray()
+                while len(content) <= max_bytes:
+                    chunk = cast(bytes, body.read(max_bytes + 1 - len(content)))
+                    if not chunk:
+                        return bytes(content)
+                    content.extend(chunk)
+                raise OutputLimitExceededError(f"object exceeds the {max_bytes}-byte limit: {key}")
             finally:
                 body.close()
         except (BotoCoreError, ClientError) as exc:

@@ -73,6 +73,77 @@ def _structured(result: CallToolResult) -> dict[str, object]:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("content", [b"x" * 131072, b"\xff" * 131072, "é".encode() * 65536])
+async def test_mcp_bounds_returned_body_independently_of_provider(content: bytes) -> None:
+    class OversizedStorage(_StorageFixture):
+        def read_object(self, key: str, *, max_bytes: int | None = None) -> bytes:
+            assert max_bytes == 65536
+            return content
+
+    storage = OversizedStorage()
+    storage.objects["changing"] = b"x"
+    async with Client(create_server(RidgeService(ResourceRegistry([storage])))) as client:
+        result = _structured(
+            await client.call_tool("read_data", {"resource": "storage", "path": "changing"})
+        )
+    assert result["kind"] == "too_large"
+    assert result["size"] == len(content)
+    assert result["content"] is None
+    assert "copy" in str(result["guidance"])
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("fault", ["growth", "provider_overflow"])
+async def test_stdio_read_race_then_healthy_copy(tmp_path: Path, fault: str) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text("resources: {local: {provider: local, root: .}}")
+    (tmp_path / "changing").write_bytes(b"x")
+    bootstrap = (
+        f"FAULT = {fault!r}\n"
+        + """
+from ridge.backends.local import LocalResource
+from ridge.mcp import main
+original_read = LocalResource.read
+def read(self, path, *, max_bytes=None):
+    if path == "changing":
+        content = b"x" * 131072
+        (self.root / path).write_bytes(content)
+        if FAULT == "provider_overflow":
+            return content
+    return original_read(self, path, max_bytes=max_bytes)
+LocalResource.read = read
+main()
+"""
+    )
+    parameters = StdioServerParameters(
+        command=sys.executable, args=["-c", bootstrap, "--config", str(config)]
+    )
+    with anyio.fail_after(15):
+        async with Client(parameters) as client:
+            response = await client.call_tool(
+                "read_data", {"resource": "local", "path": "changing"}
+            )
+            if fault == "growth":
+                assert response.is_error
+                assert response.content[0].type == "text"
+                assert "byte limit" in response.content[0].text
+            else:
+                result = _structured(response)
+                assert result["kind"] == "too_large"
+                assert result["content"] is None
+                assert result["size"] == 131072
+            copied = _structured(
+                await client.call_tool(
+                    "copy", {"source": "local:changing", "destination": "local:copied"}
+                )
+            )
+            assert copied["mode"] == "completed"
+    assert (tmp_path / "changing").read_bytes() == b"x" * 131072
+    assert (tmp_path / "copied").read_bytes() == b"x" * 131072
+    assert not list(tmp_path.glob(".ridge-transfer-*"))
+
+
+@pytest.mark.anyio
 async def test_server_declares_explicit_tools_and_annotations(tmp_path: Path) -> None:
     async with Client(create_server(_service(tmp_path))) as client:
         listing = await client.list_tools()

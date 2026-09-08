@@ -207,6 +207,45 @@ def test_storage_read_bounds_and_missing_objects() -> None:
         resource.stat_object("missing")
 
 
+@pytest.mark.parametrize("maximum", [None, 0, 4])
+@pytest.mark.parametrize("size", [0, 4, 5, 131072])
+def test_storage_read_bounds_body_despite_stale_head(
+    monkeypatch: pytest.MonkeyPatch, maximum: int | None, size: int
+) -> None:
+    client = _MemoryS3Client()
+    resource = _resource(client)
+    resource.write_object("changing", b"")
+    reads: list[int] = []
+    consumed = 0
+
+    class ShortBody(io.BytesIO):
+        def read(self, size: int | None = -1, /) -> bytes:
+            nonlocal consumed
+            assert size is not None
+            reads.append(size)
+            if maximum is not None:
+                assert 0 < size <= maximum + 1 - consumed
+            chunk = super().read(min(size, 2) if size >= 0 else size)
+            consumed += len(chunk)
+            return chunk
+
+    body = ShortBody(b"x" * size)
+
+    def get_object(**kwargs: object) -> dict[str, object]:
+        return {"Body": body}
+
+    monkeypatch.setattr(client, "get_object", get_object)
+    if maximum is not None and size > maximum:
+        with pytest.raises(OutputLimitExceededError):
+            resource.read_object("changing", max_bytes=maximum)
+        assert consumed == maximum + 1
+    else:
+        assert resource.read_object("changing", max_bytes=maximum) == b"x" * size
+        assert consumed == size
+    assert body.closed
+    assert reads
+
+
 def test_copy_replaces_files_between_filesystem_and_s3(tmp_path: Path) -> None:
     client = _MemoryS3Client()
     storage = _resource(client)

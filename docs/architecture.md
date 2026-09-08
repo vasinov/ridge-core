@@ -54,7 +54,10 @@ changing Ridge core.
 - Configuration roots are resolved relative to the configuration file so the
   same configuration is independent of the invocation directory.
 - Reads and writes are binary-safe. Frontends decide how to encode or bound
-  content for their transport.
+  content for their transport. Built-in bounded reads request at most the limit
+  plus one detection byte from their streams and reject overflow, independently
+  of earlier size metadata. MCP checks returned body size again before decoding
+  or inlining it.
 - Filesystem writes create missing parents and replace an existing regular file
   or symbolic link by default. They reject directories and special files.
 - Execution is synchronous and unbounded by default; callers may request an

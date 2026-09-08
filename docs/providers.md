@@ -56,6 +56,10 @@ against disposable roots, prefixes, or test resources.
 Providers are trusted in-process Python. They execute with Ridge's ambient
 authority and are not sandboxed by Ridge request authorization.
 
+Bounded reads must enforce `max_bytes` against content, not only prior metadata,
+and raise `OutputLimitExceededError` rather than returning a truncated result.
+See [data semantics](concepts/resources.md#shared-data-operations-explicit-addressing).
+
 Transfer `finish()` completes staging; only `commit()` publishes the destination,
 after both endpoints have finished successfully. `abort()` must not delete a
 previous destination retained for recovery, or undo a published result. An

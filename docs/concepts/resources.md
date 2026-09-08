@@ -54,6 +54,12 @@ addressing it means an exact resource-relative key. Stat retains backend
 metadata rather than inventing filesystem kinds for objects. Direct reads and
 writes buffer content; use copy to stream large payloads.
 
+With `max_bytes` (CLI `read --max-bytes`), built-in reads enforce the limit on
+the body as well as checking size metadata. They request at most one extra byte
+to detect overflow and raise `OutputLimitExceededError` instead of returning
+partial content. An omitted limit leaves direct reads unbounded. This is a byte
+limit, not a content snapshot or a read timeout.
+
 The registry derives supported operations from the typed capability collection.
 Providers do not declare arbitrary commands or MCP tools. Adding a generic
 operation remains a Ridge API design decision so its semantics stay consistent

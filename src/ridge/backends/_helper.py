@@ -135,7 +135,11 @@ elif operation == "read":
     size = target.stat().st_size
     if maximum is not None and size > maximum:
         fail("output_limit", "file is " + str(size) + " bytes, exceeding the " + str(maximum) + "-byte limit: " + path_text)
-    reply({"ok": True, "content": base64.b64encode(target.read_bytes()).decode("ascii")})
+    with target.open("rb") as stream:
+        content = stream.read() if maximum is None else stream.read(maximum + 1)
+    if maximum is not None and len(content) > maximum:
+        fail("output_limit", "file exceeds the " + str(maximum) + "-byte limit: " + path_text)
+    reply({"ok": True, "content": base64.b64encode(content).decode("ascii")})
 elif operation == "write":
     content = sys.stdin.buffer.read()
     if target == root:

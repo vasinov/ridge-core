@@ -48,6 +48,11 @@ Data and execution results are bounded:
 - stdout and stderr are independently limited to 32 KiB while retaining their
   full byte counts.
 
+Read size metadata is a preflight check, not a snapshot. If content grows past
+the limit during a built-in read, the tool reports a size-limit error; use `copy`.
+MCP independently checks returned bytes before decoding or inlining them, even
+if a provider does not enforce the requested read limit.
+
 Ridge formats primary failures and secondary recovery notes into at most 16 KiB
 of UTF-8 diagnostic text, before frontend/protocol prefixes, with explicit truncation. See
 [copy recovery](guides/copying.md) for retained staging and unconfirmed publication.
