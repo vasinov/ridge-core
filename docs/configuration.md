@@ -50,13 +50,16 @@ The default path is `./ridge.yaml`. `--config PATH` takes precedence over the
 
 Relative local paths, SSH identity files, and SSH known-hosts files are
 resolved relative to the configuration file. Resource-specific configuration
-is validated by the selected `provider`; unknown fields fail rather
-than being silently ignored.
+is validated by the selected `provider`; built-in providers reject unknown fields.
+Resource names begin with an ASCII letter or digit and contain only letters,
+digits, `.`, `_`, and `-`. All built-ins accept optional scalar-valued `properties`
+for descriptive metadata; these do not grant capabilities or permissions.
 
-Ridge does not manage or intentionally persist provider credentials. S3 uses
-Boto3's ambient credential chain, SSH uses OpenSSH configuration and agents, and local or Docker commands
-inherit the Ridge process environment unless a request explicitly supplies
-environment values.
+S3 uses Boto3's ambient credential chain; SSH uses OpenSSH configuration and agents.
+Local commands inherit the Ridge process environment. Docker and SSH commands
+inherit their remote helper's environment, not automatically the local Ridge
+environment. Explicit request values supplement or override the execution
+environment. Ridge does not manage provider credentials.
 
 The optional `state.directory` selects durable SQLite state, logs, and transient
 staged payloads. A relative value is resolved from the configuration file. The
@@ -81,8 +84,8 @@ for unsupported operations are configuration errors.
 
 Permissions apply to operations performed through Ridge. Resource discovery and
 inspection remain available and expose configured properties plus supported and
-allowed operations. Ridge does not alter downstream operating-system or service
-permissions and does not prevent access outside Ridge.
+allowed operations. See [Authorization](concepts/authorization.md) for enforcement
+and the relationship to downstream permissions.
 
 See the resource-specific pages for complete semantics:
 

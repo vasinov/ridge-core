@@ -22,17 +22,19 @@ permissions:
   project-files: [data.list, data.read, data.write, data.stat]
 ```
 
-There is no separate filesystem provider. Without permissions, local resources
-allow both execution and data operations. The root defaults to the configuration
+Without permissions, local resources allow both execution and data operations.
+The root defaults to the configuration
 directory when omitted; configured roots must already exist.
 
-Filesystem paths are relative to the configured root. Absolute paths, `..`
-traversal, and symbolic-link escapes fail. Writes create missing parents and
-replace existing regular files or symbolic links. Directories and special
+Filesystem paths are relative to the configured root. Absolute paths and paths
+resolving outside the root fail; contained paths such as `nested/../file` are
+accepted. Writes create missing parents and replace existing regular files or
+symbolic links. Directories and special
 files are rejected at file destinations.
 
-Local execution is not a sandbox. Commands run as the Ridge operating-system
-user with its ambient environment and can access anything that user can access.
+Commands run as the Ridge operating-system user with its ambient environment and
+can access anything that user can access.
+Use native isolation for untrusted code; see [filesystem boundaries](../security.md#filesystem-boundaries).
 Background local execution writes stdout and stderr to durable logs while the
 command is running.
 

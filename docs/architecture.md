@@ -10,7 +10,7 @@ backend mechanics. CLI and MCP are coequal frontends over the same application
 service, and installed providers can add resource implementations without
 changing Ridge core.
 
-## Architecture
+## Ownership
 
 - `model` owns backend-neutral values and operation names.
 - `resource` owns capability protocols and the typed capability collection.
@@ -40,7 +40,9 @@ changing Ridge core.
 - Generic operations retain the same semantics across supporting backends.
 - Backend differences are explicit errors or metadata, never silent semantic
   changes.
-- Filesystem paths are relative to a configured root and cannot escape it.
+- Filesystem operations validate relative paths against a configured root.
+  These checks do not contain hostile concurrent filesystem mutation; see
+  [filesystem boundaries](security.md#filesystem-boundaries).
 - Compute commands are argument vectors; no backend adds an implicit shell.
 - Descriptive properties identify their configured or detected source and do
   not imply permissions.
@@ -49,9 +51,8 @@ changing Ridge core.
 
 ## Decisions
 
-- Ridge is initially a trusted, single-user process. It inherits ambient OS
-  authority and credentials and is not a sandbox. It does not manage credentials;
-  caller-provided arguments, content, and output can still persist secrets in jobs.
+- Ridge serves one trusted operator with multiple cooperating agents. The
+  [security model](security.md) owns ambient-authority and sensitive-state guidance.
 - Configuration selects a `provider`, not a resource kind. `local`, Docker,
   and SSH expose compute and filesystem mechanisms; S3 exposes object storage.
   Files-only local access uses exact data grants without `compute.exec`.
@@ -74,8 +75,8 @@ changing Ridge core.
 - Docker execution and filesystem operations use bundled helper source through
   an explicitly configured Python executable in the container. The helper
   enforces timeouts inside the container and applies rooted filesystem checks
-  without assuming a shell or image utilities. It is a declared portability
-  constraint, not an installation or persisted agent.
+  without assuming a shell or image utilities. Target helpers require Python
+  3.11+ and use only its standard library.
 - Killing the host-side `docker exec` client does not reliably stop its
   container process. Docker timeouts are therefore enforced by the in-container
   helper; a transport timeout is reported as resource unavailability rather
@@ -135,25 +136,14 @@ changing Ridge core.
   verify the source snapshot; tree members use snapshotted sizes. Connection
   timeouts still apply, and cancellation follows the acknowledged-cleanup rules
   above. MCP bounds model-facing results rather than changing copy semantics.
-- Identity-aware and contextual authorization remains deferred. The trust model,
-  resource path boundary, and exact process-scoped permission policy are current
-  product behavior rather than security polish.
 - The product, import package, and CLI are named `Ridge` and `ridge`. The Python
   distribution is named `ridge-core` because the `ridge` distribution name is
   already occupied.
 - Public documentation uses MkDocs with Markdown source, Material for MkDocs,
   and mkdocstrings for the Python extension API. Documentation dependencies do
   not enter the runtime dependency set.
-- Jinja2 is the standard if Ridge gains human-readable text templates. It must
-  not be used as a substitute for argument vectors, shell escaping, policy
-  evaluation, or structured serialization. A runtime dependency is added only
-  with the first concrete product template; documentation tooling may depend on
-  Jinja2 independently.
-- The configuration file is currently the resource-inventory scope. Ridge has
-  no `Workspace` domain object. That term is reserved until real transfer and
-  agent workflows show whether it should mean a named inventory plus locations;
-  it will not silently imply synchronization, execution lifetime, isolation, or
-  a security boundary.
+- The configuration file defines the resource inventory; resource locations
+  identify data within it.
 - Object storage and rooted filesystems retain separate mechanism contracts,
   exposed through shared `data.list/read/write/stat` application operations.
   A resource selects at most one addressing model. Discovery reports that
@@ -162,13 +152,11 @@ changing Ridge core.
 - An S3 resource identifies a bucket and, optionally, a key prefix and region.
   Region is resource-scoped because one inventory can contain buckets in
   different regions; when omitted, Boto3's ambient region selection applies.
-  Credentials and profile selection remain in Boto3's ambient credential chain
-  and Ridge persists neither. Additional S3 configuration is deferred until a
-  demonstrated workflow requires it.
+  Credentials and profile selection remain in Boto3's ambient credential chain.
 - A direct storage write is a native whole-object put: it creates or replaces
   the object without an `overwrite` flag. Cross-resource copy likewise replaces
-  an existing object; Ridge currently uses trusted single-user, last-writer-wins
-  semantics rather than optimistic concurrency.
+  an existing object. Publication uses last-writer-wins semantics, not conditional
+  version checks; cooperative claims mediate participating Ridge callers.
 - Copy payloads distinguish a single file-like byte stream from a filesystem
   tree archive. Filesystem resources accept both payloads; S3 resources accept
   only single-object payloads. Directory-to-prefix mapping is not implicit.
@@ -176,6 +164,8 @@ changing Ridge core.
   buffer. Multipart upload is a correctness and bounded-memory mechanism, not a
   provider-side transfer optimization; ordinary failure/cancellation cleanup
   attempts to abort uploads. Abrupt termination can leave unfinished uploads.
+  Fixed 8 MiB parts and the 10,000-part guard impose the current
+  [streamed upload ceiling](resources/s3.md#streamed-upload-size).
 - Object keys are relative to the resource's configured prefix but are not
   normalized as POSIX paths. Storage listing is flat, recursive by prefix, and
   explicitly paginated with opaque continuation tokens.
@@ -189,11 +179,12 @@ changing Ridge core.
   Filesystem cursors encode directory-scoped offsets over fresh sorted listings,
   not snapshots; mutation can skip or repeat entries. Storage retains backend
   cursors and prefix matching. Filesystem enumeration still buffers metadata.
-- MCP responses are structured and bounded for model context. Small UTF-8 reads are
-  inline, and binary or oversized reads return descriptors directing callers to
-  copy. Execution bounds stdout and stderr independently while reporting full
+- MCP inline payloads and execution output are bounded for model context. Small
+  UTF-8 reads are inline, and binary or oversized reads return descriptors directing
+  callers to copy. Execution bounds stdout and stderr independently while reporting full
   byte counts and truncation. Resource listing exposes concise capability
-  summaries; detailed properties require explicit inspection.
+  summaries; detailed properties require explicit inspection. These presentation
+  limits do not bound captured execution output in memory or all response metadata.
 - MCP read-only, idempotent, and destructive annotations describe likely side
   effects for the host. They are hints and never substitute for authorization.
 - CLI data verbs are root commands: `list`, `read`, `write`, and `stat`.
@@ -220,7 +211,7 @@ changing Ridge core.
 - Provider code is trusted in-process Python with ambient Ridge authority.
   Authorization mediates requests at the centralized application and
   capability-resolution boundary, but it cannot contain malicious provider
-  internals; plugin sandboxing would be a separate system.
+  internals.
 - Canonical operations expose read, write, or execute effect metadata plus
   idempotence. Transfer is an optional mechanism requiring data support, not a
   separate permission family. Copy preflights source `data.read` and destination
@@ -232,61 +223,30 @@ changing Ridge core.
   stay inside the admitted operation, whose failure retains existing uncertainty
   rules. Direct coordinator callers use the same location validation.
 
-## Authorization experiment
+## Authorization
 
-Ridge separates three concepts: support means an implementation exists,
-authorization means Ridge policy permits a request, and downstream authority
-means the operating system or service will perform it. The effective operation
-is the intersection of all three.
+`authorization` owns policy decisions; `application` checks them before invoking
+capabilities through either frontend. Copy checks both endpoints before opening
+either. Requests retain path, key, and argument context, while the built-in policy
+matches exact resource/operation pairs. Tests verify denials and absence of target
+side effects. Discovery and inspection stay outside policy.
 
-The initial experiment uses one operator-selected policy per Ridge process. No
-policy means explicitly unrestricted trusted mode; a configured policy is
-default-deny and contains exact resource-and-operation grants. It has no users,
-roles, explicit deny rules, path patterns, conditions, inheritance, or owner
-fields. Requests retain their path, key, or argument context for evidence and
-future policy without matching on that context yet.
-
-Authorization occurs in the application layer before capability invocation and
-is identical across CLI and MCP. Copy preflights `data.read` on the source
-and `data.write` on the destination before opening either endpoint.
-Resource discovery and inspection are intentionally outside policy in this
-single-operator experiment. They expose all configured resource names, providers,
-supported operations, allowed operations, and provider inspection properties.
-Configuration metadata is therefore not confidential from clients able to
-reach a Ridge frontend.
-
-Ridge does not assign one ambiguous enforcement-strength label. It instead
-makes separately scoped statements about its policy decision, coverage of
-Ridge-owned entry points, known bypasses through other allowed operations, and
-the independent downstream authority of the operating system or service. A
-Ridge allow or deny decision does not imply that AWS IAM, SSH credentials, the
-local operating system, or another downstream boundary implements the same
-policy.
-
-The Ridge enforcement guarantees are that application operations authorize
-before invoking their target capability, CLI and MCP use that same boundary,
-and copy authorizes both endpoints before opening either. Tests cover these
-guarantees with denied operations and inspected side effects. Direct backend or
-credential access outside Ridge remains outside this boundary.
-
-Arbitrary compute execution can bypass filesystem mediation unless a native
-account, container, operating-system, or service boundary also applies.
-Installed providers remain trusted in-process code and are outside policy
-containment.
+The [authorization guide](concepts/authorization.md) owns grant semantics,
+discovery visibility, and the distinction between support, permission, and
+downstream authority. The [security model](security.md) owns compute bypasses
+and trusted-provider assumptions.
 
 ## Durable jobs
 
 Jobs and resource coordination share one authoritative SQLite database,
 `state.sqlite3` under `state.directory` (default `.ridge` beside the configuration).
-Job artifacts occupy per-job directories beside it. No older development state
-is migrated or deleted automatically.
+Job artifacts occupy per-job directories beside it. Retention and handling of
+earlier development state are documented in the [jobs guide](guides/jobs.md).
 
-Ridge supports immediate, durable background execution without becoming
-a scheduler. `compute.exec`, `data.write`, and cross-resource
-copy may be submitted in the background. Submission is an option on the
-existing operation; only observation and cancellation live in the `jobs`
-namespace. There are no priorities, dependencies, schedules, worker pools,
-automatic retries, or broker semantics.
+Ridge supports immediate, durable background execution. `compute.exec`,
+`data.write`, and cross-resource copy may be submitted in the background. Submission
+is an option on the existing operation; only observation and cancellation live in the `jobs`
+namespace. Every submission receives one attempt without automatic retry.
 
 SQLite is authoritative for job identity, request metadata, state transitions,
 idempotency keys, and results. Per-job files hold stdout, stderr, and transient

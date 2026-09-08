@@ -63,9 +63,11 @@ unfinished uploads. Secondary cleanup errors accompany
 the primary failure in CLI/MCP errors and background job inspection, with bounded
 diagnostics and explicit truncation. See [job cancellation limits](jobs.md#current-limitations).
 
-Copy has no arbitrary total size or wall-clock limit. Transport connection
-timeouts still apply. Streaming avoids a complete temporary payload on the Ridge
+The coordinator adds no total-size or wall-clock limit; backend limits and
+transport connection timeouts still apply. In particular, the current
+[S3 destination limit](../resources/s3.md#streamed-upload-size) is 78.125 GiB per
+streamed object. Streaming avoids a complete temporary payload on the Ridge
 host when relaying between remote resources, but filesystem destination staging
 requires space for the incoming file/tree. Existing destination data can also
 remain on disk until publication completes. S3 multipart parts are not a local
-whole-file spool. This is neither zero-disk I/O nor a direct cloud-to-cloud copy.
+whole-file spool.

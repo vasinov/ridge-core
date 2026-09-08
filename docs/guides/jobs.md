@@ -88,7 +88,7 @@ Termination verification covers the owned local group, including built-in copy
 helpers. It does not cover processes that deliberately leave the group, detached
 processes created by providers, or Docker/SSH processes beyond the local transport.
 Use an explicit execution timeout where appropriate; remote helpers enforce it
-at the execution site. Ridge remains a trusted single-user tool, not a sandbox.
+at the execution site.
 
 A supervisor crash after execution starts is reported as `lost` on observation;
 the worker may still be running. Recovery does not guess at process ownership or
@@ -133,7 +133,7 @@ directly when monitoring its lifecycle.
 Metadata, results, idempotency keys, and stdout/stderr logs are retained
 indefinitely under `state.directory` (default `.ridge` beside the config).
 There is no automatic expiration, pruning, or deletion command. Staged write
-payloads are removed after verified shutdown or a fenced, unstarted attempt.
+payload cleanup is attempted after verified shutdown or a fenced, unstarted attempt.
 Cleanup errors appear in the job's `error` field without replacing its operation
 result; inspect that field even for a successful job. Worker failures retain bounded
 secondary diagnostics, including copy recovery paths. Cancellation preserves those

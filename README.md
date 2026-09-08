@@ -16,11 +16,10 @@ calls, and adopting Python/MCP hosts can renew them automatically. Callers must
 share local Ridge state and matching resource lock keys; this does not lock out
 direct access outside Ridge. See [multi-agent coordination](docs/guides/coordination.md).
 
-> [!WARNING]
-> Ridge is public-alpha software for controlled, single-user environments. It
-> inherits the operating-system authority and ambient credentials of its
-> process. Its optional exact permission policy attenuates operations through
-> Ridge; it is not a sandbox or a boundary around direct access.
+Ridge is public-alpha software for one trusted operator with multiple cooperating
+agents. Exact operation grants control access through Ridge; OS and service
+permissions control downstream authority. See the [security model](docs/security.md)
+when choosing resources and grants.
 
 ## Install
 
@@ -73,8 +72,8 @@ or set `RIDGE_CONFIG` to select another file. Relative resource roots are
 resolved relative to the configuration file.
 
 Background mode on `exec`, `write`, and `copy` returns a durable job ID for
-inspection, logs, and cancellation requests. Jobs start immediately; Ridge is
-not a queue or scheduler. See [job limits](docs/guides/jobs.md), including
+inspection, logs, and cancellation requests. Jobs start immediately with one
+attempt. See [background jobs](docs/guides/jobs.md), including
 interrupted submission and cancellation behavior.
 
 An optional top-level `permissions` map enables default-deny exact operation
@@ -84,8 +83,8 @@ remains visible and reports supported and allowed operations; see
 model.
 
 Commands are argument vectors and never invoke a shell implicitly. Resource
-filesystem paths are relative to their configured roots; absolute paths, `..`
-traversal, and symbolic-link escapes are rejected.
+filesystem paths are relative to their configured roots; absolute paths and
+paths resolving outside the root are rejected.
 Execution has no timeout unless the caller explicitly requests one.
 
 ## MCP
@@ -101,8 +100,9 @@ required = true
 default_tools_approval_mode = "writes"
 ```
 
-MCP data and execution results are structured and bounded for model context;
-resource and job discovery can grow with inventory/history. Tool annotations are
+MCP inline reads and execution output are bounded for model context. Resource
+discovery grows with the inventory; job discovery returns bounded summary pages.
+History storage and discovery scan cost can still grow. Tool annotations are
 descriptive host hints; Ridge permission checks occur in the application service
 shared with the CLI. The server has no network listener and inherits the same
 downstream authority as the CLI.
@@ -130,8 +130,7 @@ Installed Python packages can add [resource providers](docs/providers.md).
 - **Coordinate multiple agents on shared resources:** automatic resource locks
   reject conflicting CLI/MCP operations; explicit sessions reserve resources
   across a read/edit/test or copy/run/retrieve workflow. Managed caller sessions
-  renew leases without asking the model to remember deadlines. Ridge supplies
-  coordination, not agent orchestration or task scheduling.
+  renew leases without asking the model to remember deadlines.
 - **Less transfer glue and fewer tokens spent on it:** a named-resource copy
   avoids asking the model to generate, write, debug, and explain backend-specific
   transfer scripts. You still supply the analysis program.

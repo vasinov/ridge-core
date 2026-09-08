@@ -17,7 +17,7 @@ Use `ridge resources` (MCP `list_resources`) to see supported, allowed, and
 background-capable operations before acting. Use `ridge inspect NAME` (MCP
 `inspect_resource`) for detailed properties and their configured/detected origin.
 Background operation metadata is shown when a job manager is available and the
-operation is allowed. Discovery is not authorization to invoke an operation.
+operation is allowed.
 Invalid configuration and unknown resources fail before executing the requested
 resource operation; installed providers are trusted code during loading too.
 

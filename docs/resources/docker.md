@@ -11,14 +11,11 @@ resources:
     python: python3
 ```
 
-It exposes compute and rooted-filesystem operations. Ridge does not create,
-start, stop, restart, or remove the container.
-
-The container must contain the configured Python 3 executable. Ridge sends
-ephemeral helper source for exact argument-vector execution, in-container
-timeout enforcement, and rooted filesystem checks; it does not install a
-persistent agent. Scratch and distroless images without a compatible
-interpreter are not supported.
+It exposes compute and rooted-filesystem operations. Prepare the container and
+root directory before using it; the configured executable must be Python 3.11
+or newer. Ridge sends standard-library helper source for argument-vector
+execution, in-container timeout enforcement, and rooted filesystem checks.
+The container does not need Ridge installed.
 
 Set `executable` when the Docker CLI is not available as `docker` on `PATH`.
 

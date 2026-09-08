@@ -25,10 +25,18 @@ checkout, as well as the affected Docker/SSH transports.
 
 For material changes, also run bounded realistic examples through CLI/MCP and
 inspect outputs and side effects. Docker needs a running daemon and a worker
-image with Python. SSH needs an existing POSIX account, Python, noninteractive
-authentication, and verified host keys. S3 needs an explicitly authorized
+image with Python 3.11+. SSH needs an existing POSIX account, Python 3.11+,
+noninteractive authentication, and verified host keys. S3 needs an explicitly authorized
 disposable bucket prefix and ambient credentials. Mocks do not replace those
 checks; report unavailable acceptance separately from passing unit tests.
+
+When testing Ridge authorization through MCP, allow the request to reach Ridge
+and inspect its authorization error and downstream side effects. A host approval
+denial tests the host's gate, not Ridge's policy enforcement.
+
+Follow the contributor instructions' documentation-impact review with each change:
+update current contracts in their owning pages, consolidate repeated explanations,
+and preserve actionable safety and recovery guidance.
 
 Never use valuable data for destructive conformance or whole-tree replacement
 tests. Create unique disposable roots/prefixes, bound payloads and time, and
@@ -67,19 +75,7 @@ runs on other branches only build. Generated HTML is not committed. Deployment
 uses the built-in `GITHUB_TOKEN` and OIDC, with deployment permissions limited
 to the deploy job; no personal token or repository secret is required.
 
-For the initial repository setup:
-
-1. Enable GitHub Actions and allow the actions referenced by
-   `.github/workflows/docs.yml` under **Settings → Actions → General**.
-2. Select **GitHub Actions** under **Settings → Pages → Build and deployment →
-   Source**. The repository's visibility and GitHub plan must support Pages.
-3. Ensure the `github-pages` environment permits deployments from `main`.
-   Any configured required reviewers must approve deployments before they run.
-4. Push the workflow to `main`, or select **Actions → Documentation → Run
-   workflow** on `main` after it is present there.
-
 The deployment job links to the published site. Build failures appear in
-**Build documentation**; check Pages settings, environment rules, and job
-permissions if **Deploy documentation** fails. An administrator can also
-configure Pages through the GitHub API using an authenticated GitHub CLI;
-Git SSH authentication alone does not grant API access.
+**Build documentation**. If **Deploy documentation** fails, check that Pages uses
+GitHub Actions as its source, the `github-pages` environment permits `main`, and
+required deployment reviews and workflow permissions are satisfied.

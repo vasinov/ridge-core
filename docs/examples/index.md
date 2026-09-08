@@ -57,9 +57,8 @@ ridge copy gpu:model.bin artifacts:experiments/run-001/model.bin
 ```
 
 Dataset and model bytes stay outside model context; the agent sees job status,
-bounded logs, and copy metadata. Ridge neither provisions GPUs nor schedules
-experiments. Multi-file datasets need explicit file copies or a prebuilt archive;
-an object prefix is not a filesystem tree.
+bounded logs, and copy metadata. Multi-file datasets need explicit file copies or
+a prebuilt archive; an object prefix is not a filesystem tree.
 
 ### Builds and tests
 
@@ -75,8 +74,8 @@ ridge copy builder:project/results.xml reports:results.xml
 
 Whole-tree replacement removes stale destination-only files. Use a dedicated
 worker directory: replacement also removes a virtual environment or cache kept
-inside that destination tree. Put reusable dependencies elsewhere. Ridge does
-not install dependencies, implement CI triggers, or infer whether tests passed.
+inside that destination tree. Put reusable dependencies elsewhere and inspect
+the command's exit code to determine whether tests passed.
 
 ### Scientific computing
 
@@ -91,8 +90,8 @@ ridge copy lab:result.csv reports:result.csv
 ```
 
 The agent can reconnect to a durable attempt instead of holding a long shell
-session. Ridge is not an HPC batch scheduler and does not replace Slurm or manage
-licenses. Confirm host policy before executing directly on shared infrastructure.
+session. Confirm host policy before executing directly on shared infrastructure;
+use its required scheduler when direct execution is not permitted.
 
 ### Media processing
 
@@ -116,6 +115,7 @@ allows FFmpeg output replacement, independently of Ridge copy semantics.
 Copies require source `data.read` and destination `data.write`; execution requires
 `compute.exec`. Downstream OS/service permissions must also allow the work.
 Copy streams payloads; direct reads and writes buffer them. Job results/logs are
-retained indefinitely, and cancellation does not confirm local or remote process
-termination. See [copying](../guides/copying.md), [jobs](../guides/jobs.md), and
+retained indefinitely. A cancellation request is not confirmation: `cancelled`
+verifies owned local-group shutdown, not remote or detached-process termination.
+See [copying](../guides/copying.md), [jobs](../guides/jobs.md), and
 [security](../security.md) before adapting these to valuable data.

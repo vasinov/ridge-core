@@ -55,14 +55,12 @@ copy/analysis steps replaces their exact destinations.
 ## What the resource names buy you
 
 The caller chooses locations and operations, not backend transfer commands.
-Every resource is local here to keep the first run reproducible. Ordinary Python
-is simpler for summing an isolated local CSV. Ridge becomes useful when the
-worker is a container or SSH host, while the caller's workflow stays the same.
+Every resource is local here to keep the first run reproducible. Change the worker
+to a container or SSH host and the caller's workflow stays the same.
 
 `ridge resources` shows supported and allowed operations. Inputs have data-only
-read grants; the worker allows execution and data access. These are Ridge policy
-checks, not a sandbox around commands. Use `ridge inspect worker` for detailed
-properties. See [Authorization](concepts/authorization.md).
+read grants; the worker allows execution and data access. Use `ridge inspect worker`
+for detailed properties. See [Authorization](concepts/authorization.md).
 
 Ridge loads `./ridge.yaml` by default. Use `ridge --config PATH COMMAND` or
 `RIDGE_CONFIG` to select another inventory. Relative roots resolve from the
@@ -70,11 +68,11 @@ configuration file, not the invocation directory.
 
 ## Platform expectations
 
-Ridge requires Python 3.11+ on a POSIX host. Current acceptance evidence covers
-a macOS host, Linux Docker workers, loopback POSIX OpenSSH, and S3—not every
-Python/platform combination. Jobs additionally require local advisory locks and
+Ridge requires Python 3.11+ on a POSIX host. The
+[test workflow](development.md#continuous-integration) covers Python 3.11–3.14 on
+Linux and Python 3.14 on macOS. Jobs additionally require local advisory locks and
 a compatible `ps`; see [job prerequisites](guides/jobs.md). Docker/SSH workers
-require a compatible Python 3 interpreter.
+require Python 3.11 or newer.
 See [Development](development.md) for verification and external-test prerequisites.
 
 ## Next steps

@@ -19,7 +19,7 @@ resources:
     properties:
       purpose: source-code
 
-  # Docker resources refer to containers that Ridge does not manage.
+  # Docker resources need an existing running container with Python 3.11+.
   # build:
   #   provider: docker
   #   container: ridge-build

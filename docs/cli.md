@@ -43,7 +43,9 @@ ridge exec local -- sh -lc 'printf "%s\n" "$PWD"'
 ```
 
 The exit status from `ridge exec` is the child exit status. Timeout returns
-status 124. Standard output and standard error remain separate.
+status 124. Standard output and standard error remain separate. Foreground
+execution buffers them until completion and prints the full output, unlike MCP's
+bounded presentation. Use background local execution for incremental log reads.
 
 Data commands use filesystem paths or exact object keys according to resource
 addressing. `list` returns a JSON page (`addressing`, `entries`, `next_cursor`);

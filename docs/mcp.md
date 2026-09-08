@@ -3,18 +3,6 @@
 `ridge-mcp` exposes the configured inventory over local stdio using the
 official MCP Python SDK. It has no network listener.
 
-Hosts that own a multi-call workflow can use the Python `ManagedMCPSession`
-caller helper for automatic renewal and token injection. This requires host
-integration; the server does not keep idle sessions alive on its own. See
-[managed caller sessions](guides/coordination.md#managed-caller-sessions) for a
-runnable example, cancellation, and failure behavior.
-
-Background cancellation records durable intent and survives a client disconnect.
-Inspect the returned job: `cancelled` confirms owned-local-group shutdown, `lost`
-means uncertainty, and a nonterminal status with `cancellation_requested` means
-the request is still pending. Cancellation is not rollback or remote termination;
-see [Background jobs](guides/jobs.md#startup-and-cancellation) for bounds and recovery.
-
 For Codex, configure absolute paths:
 
 ```toml
@@ -39,7 +27,9 @@ key/prefix. `list_data` accepts `cursor` and `limit` and returns `addressing`,
 `entries`, and `next_cursor`. `stat_data` returns `addressing` and `metadata` with
 filesystem or object-specific fields. See [data semantics](concepts/resources.md).
 
-Data and execution results are bounded:
+## Content and discovery bounds
+
+MCP limits inline payloads and execution output:
 
 - filesystem and storage lists are paginated;
 - only UTF-8 reads of at most 64 KiB are inlined;
@@ -47,6 +37,12 @@ Data and execution results are bounded:
   `copy`;
 - stdout and stderr are independently limited to 32 KiB while retaining their
   full byte counts.
+
+These are presentation limits, not a bound on execution memory. Foreground
+execution captures output before formatting it; Docker/SSH helpers also buffer
+command output. Background local execution writes directly to durable logs.
+Resource properties, names, and full job inspection do not have a universal
+response-byte cap.
 
 Read size metadata is a preflight check, not a snapshot. If content grows past
 the limit during a built-in read, the tool reports a size-limit error; use `copy`.
@@ -64,6 +60,8 @@ intent. Use `inspect_job` for those details and bounded `read_job_logs` pages to
 reconnect. See [job discovery](guides/jobs.md#discovering-jobs) for cursor and
 changing-history semantics.
 
+## Background work
+
 The execution, write, and copy tools accept `background=true` and return a
 response whose `mode` is `completed` or `submitted`. Submitted responses contain
 a job handle. Use `list_jobs`, `inspect_job`, `read_job_logs`, and `cancel_job`
@@ -73,6 +71,14 @@ an `idempotency_key` before retrying a submission.
 
 Execution has no timeout by default in either mode. Set `timeout_seconds` to a
 finite value when the attempt must be bounded.
+
+Background cancellation records durable intent and survives a client disconnect.
+Inspect the returned job: `cancelled` confirms owned-local-group shutdown, `lost`
+means uncertainty, and a nonterminal status with `cancellation_requested` means
+the request is still pending. Cancellation is not rollback or remote termination;
+see [Background jobs](guides/jobs.md#startup-and-cancellation) for bounds and recovery.
+
+## Resource sessions
 
 Because MCP inline reads first determine whether content fits in model context,
 `read_data` requires both `data.stat` and `data.read`. CLI reads do not
@@ -89,14 +95,16 @@ reason)` is only for uncertain operations and never cancels them. Sessions survi
 MCP disconnection and can also be used from the CLI. See
 [coordination and recovery](guides/coordination.md).
 
+Hosts that own a multi-call workflow can use the Python `ManagedMCPSession`
+caller helper for automatic renewal and token injection. This requires host
+integration; the server does not keep idle sessions alive on its own. See
+[managed caller sessions](guides/coordination.md#managed-caller-sessions) for a
+runnable example, cancellation, and failure behavior.
+
+## Host approvals and Ridge policy
+
 MCP annotations describe likely side effects. They are host hints, not Ridge
 authorization. MCP operations are authorized by the same application service as
-CLI operations. The server still inherits the same operating-system authority
-and ambient credentials as the CLI, and Ridge policy does not constrain direct
-access outside Ridge.
-
-The Codex host can reject an MCP tool before Ridge sees it. This is useful
-defense in depth, but it is not evidence that Ridge policy denied the request.
-When testing Ridge authorization itself, set the server's tool approval mode so
-the request reaches Ridge and verify Ridge's authorization error and downstream
-side effects separately.
+CLI operations. A host can reject a call before Ridge receives it; see
+[Authorization](concepts/authorization.md) for these independent gates and
+[Development](development.md) for testing them separately.

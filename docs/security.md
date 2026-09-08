@@ -1,11 +1,9 @@
 # Security model
 
-Ridge is currently intended for controlled, single-user environments. It is
-not a sandbox, credential broker, or complete authorization boundary.
-
-An optional exact permission policy can reduce which operations clients perform
-through Ridge. It does not reduce the process's ambient authority or prevent
-direct access outside Ridge.
+Ridge supports one trusted operator with multiple cooperating agents. Its optional
+exact permission policy controls resource operations through the application
+service shared by CLI and MCP. It is not a sandbox: process authority and direct
+access remain governed by the operating system and downstream services.
 
 ## Ambient authority
 
@@ -20,12 +18,15 @@ remote account. S3 uses Boto3's ambient credential chain.
 
 ## Filesystem boundaries
 
-Built-in filesystem operations reject absolute paths, `..` traversal, and
-symbolic-link escapes from their configured root. Safe tree copy rejects
+Built-in filesystem operations reject absolute paths and paths that resolve
+outside their configured root, including symbolic-link escapes. Contained paths
+such as `nested/../file` are accepted. Tree copy rejects
 absolute, broken, escaping, and top-level links plus hard links and special
 files.
 
-These checks mediate Ridge filesystem operations. They cannot restrict an
+Path validation is not containment against hostile concurrent filesystem changes.
+Use roots whose directory structure is controlled by trusted participants, and
+use native isolation when running untrusted code. These checks cannot restrict an
 arbitrary command executed on the same resource unless a native operating
 system, account, or container boundary also applies.
 
@@ -37,8 +38,7 @@ execution and are not contained by the resource path boundary.
 
 ## Durable state
 
-Ridge does not manage provider credentials, but this does not mean it cannot
-store secrets. Job arguments, staged write content, output, and errors may
+Job arguments, staged write content, output, and errors may
 contain sensitive data. Metadata and logs have no automatic expiration. Ignore
 `.ridge/` (and any custom state directory) in your own repository and review
 artifacts before publishing. See [retention](guides/jobs.md#retention-and-sensitive-data).
@@ -51,12 +51,10 @@ with declared resource scopes; different state directories, unrecognized aliases
 arbitrary compute access, and external tools can bypass it. Force-release records
 an operator reason and does not terminate work. See [coordination](guides/coordination.md).
 
-Job cancellation verifies shutdown only of the owned local worker group. It is
-not a containment boundary, rollback, or proof of remote/detached-process termination.
-An uncertain outcome is `lost`; staged payloads may remain to avoid deleting data
-under a live worker. Recovery never signals a stored PID without live ownership.
-Review the [current limitations](guides/jobs.md#current-limitations) before using
-it to stop work with external side effects.
+For cancellation, distinguish a recorded request from verified `cancelled` status.
+Verification covers the owned local worker group, not remote or detached processes,
+and does not roll back effects. Follow [job recovery](guides/jobs.md#current-limitations)
+before retrying lost work or deleting its state.
 
 ## MCP
 

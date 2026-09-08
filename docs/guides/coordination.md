@@ -17,23 +17,21 @@ Locks apply to resource keys, not individual file paths: two writes to different
 files in one resource still conflict. Independent resources can be used in
 parallel, and shared reads can coexist. Prefer separate working areas for tasks
 that do not need to share mutable state; use matching lock keys for aliases or
-overlapping roots that do. This supports multi-agent workflows, including those
-called agent swarms, but Ridge does not create agents, assign tasks, or schedule
-their work. Direct tools and undeclared command effects remain outside protection.
+overlapping roots that do. Direct tools and undeclared command effects remain
+outside protection.
 
 ## Coordination boundary
 
 Ridge coordinates participating CLI and MCP callers through a shared local SQLite
 database. `state.directory` defaults to `.ridge` beside the configuration and
-contains `state.sqlite3` plus job and operation artifacts. It replaces
-`jobs.directory`; old state is not migrated or deleted. Keep state outside copied
+contains `state.sqlite3` plus job and operation artifacts. Keep state outside copied
 or replaced trees and on a local filesystem. Separate state directories do not
 coordinate, including when their inventories refer to the same remote targets.
 
 Each resource optionally declares `lock_key`, defaulting to its name. Equal keys
 within one state directory share coordination. Configure equal keys for aliases
 or overlapping roots; Ridge does not infer physical identity. Coordination is
-advisory at Ridge's application boundary, not a remote lock or a sandbox.
+advisory at Ridge's application boundary, not a remote lock.
 
 Reads, lists, and stats take shared claims. Writes and execution take exclusive
 claims. Copy takes shared source and exclusive destination claims, combining equal
@@ -116,7 +114,7 @@ The single-use context acquires the reservation, runs a renewal thread every
 third of the lease duration, and returns a service that attaches the token and
 checks session health before foreground and background admission. Cached service
 views cannot be used after exit or rebound to another token. The host must use
-this view for participating calls; this is not a new security boundary.
+this view for participating calls.
 
 For an already-connected MCP `Client`, use the asyncio caller helper:
 

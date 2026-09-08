@@ -9,8 +9,8 @@ observation. The script and its output format do not change.
 
 Prerequisites: complete getting started, keep its Python environment active, and
 have a running Docker daemon and permission to create a disposable container.
-The image below has Python; Ridge does not install an interpreter or provision
-the worker. Run from the demo directory and choose an unused container name.
+The image below has the required Python interpreter. Run from the demo directory
+and choose an unused container name.
 The Docker command may download the image.
 
 ```bash
@@ -78,7 +78,8 @@ existing shared container. See [retention and cancellation limits](../guides/job
 
 ## What this looks like without Ridge
 
-A competent direct Docker workflow for the same foreground task is short:
+For an isolated local CSV, ordinary Python is sufficient. A direct Docker workflow
+for the same foreground task is also short:
 
 ```bash
 docker cp inputs/sales.csv ridge-csv-demo:/workspace/sales.csv
@@ -89,7 +90,7 @@ docker cp ridge-csv-demo:/workspace/report.csv reports/report.csv
 
 Run these while the disposable container exists, as an alternative to the Ridge
 steps. Check the execution exit status before copying the report. Direct Docker
-copy already avoids model-context payloads; Ridge does not invent streaming.
+copy already keeps payloads out of model context.
 For one foreground Docker task, these commands may be all you need.
 
 The extra work appears when endpoints and lifecycle requirements vary:
@@ -112,8 +113,7 @@ spent on that glue; the analysis code and its reasoning are still required.
 
 Ridge also has costs: resource configuration, a trusted local runtime and relay,
 Python in Docker/SSH workers, and [current job limitations](../guides/jobs.md#current-limitations).
-It is not a scheduler, remote process supervisor, or a replacement for native
-permissions. Native tools remain a good fit for a single fixed backend.
+Native tools remain a good fit for a single fixed backend.
 
 ## SSH variant (illustrative)
 

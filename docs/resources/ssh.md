@@ -14,7 +14,7 @@ resources:
     python: python3
 ```
 
-The remote host must contain the configured Python 3 executable. Ridge uses an
+The remote host must contain the configured Python 3.11+ executable. Ridge uses an
 ephemeral helper for argument-vector execution, timeout enforcement, and rooted
 filesystem operations.
 
@@ -23,9 +23,9 @@ aliases remain active. Optional `identity_file` and `known_hosts_file` paths
 are resolved relative to `ridge.yaml`; `executable` may select another SSH
 client.
 
-Authentication is noninteractive and host verification is always strict.
-Ridge does not provision accounts, manage keys, prompt for passwords, or accept
-unknown host keys.
+Set up noninteractive authentication and verify the host key before connecting.
+Ridge always uses strict host verification and will not prompt for passwords or
+accept unknown host keys.
 
 The root must be absolute. OpenSSH uses the remote POSIX login shell only to
 bootstrap safely quoted helper source; caller commands remain argument vectors
