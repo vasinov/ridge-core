@@ -140,6 +140,21 @@ contextually to falsify assumptions introduced by the change.
 This is a judgment-driven acceptance discipline, not a fixed live-scenario
 catalog or an expensive default test suite.
 
+Before declaring relevant acceptance unavailable, check current prerequisites
+and existing test strategies, including disposable local services. Stopped or
+removed fixtures from an earlier run are not evidence that testing is unavailable.
+Changes to shared backend helpers warrant checking the affected transports, not
+only the local implementation. Distinguish sandbox/access denial from an actual
+service outage; use the normal approval path when access is required.
+
+Report environment blockers and material local setup changes promptly. Within
+user-authorized scope, perform low-effort, reversible setup or recovery of
+disposable test services, then recheck availability. Do not restart shared
+services that may disrupt unrelated work, install system software, or alter
+security settings without approval. Apply this approach to adjacent testing
+strategies as well; record reusable setup knowledge in its existing owner and
+keep machine-specific details in optional local context.
+
 ### External smoke-test safety
 
 Use explicitly authorized disposable targets and unique per-run directories or
