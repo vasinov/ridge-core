@@ -74,6 +74,12 @@ design or workflow document.
 Routine bug fixes and behavior-preserving refactors do not require a checkpoint
 unless they uncover an unresolved material decision.
 
+For configuration changes, explicitly review `ridge.example.yaml` alongside the
+configuration reference and loader tests. Update applicable fields, comments,
+and interacting examples (including resource aliases and state placement), and
+validate the example with the current loader. Keep the example portable; it need
+not enumerate every option.
+
 Treat Ridge as active-development software with no backward-compatibility
 obligation unless the project documents establish one. When an internal or
 persisted shape changes, update the current implementation, fixtures, and

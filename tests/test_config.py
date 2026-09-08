@@ -10,6 +10,18 @@ from ridge.errors import ConfigurationError
 from ridge.model import Operation
 
 
+def test_portable_example_includes_shared_coordination_state(tmp_path: Path) -> None:
+    example = Path(__file__).resolve().parents[1] / "ridge.example.yaml"
+    config = tmp_path / "ridge.yaml"
+    config.write_text(example.read_text())
+
+    loaded = load_configuration(config)
+
+    assert loaded.state_directory == (tmp_path.parent / ".ridge-example-state").resolve()
+    assert loaded.lock_keys["local"] == loaded.lock_keys["project-files"]
+    assert loaded.lock_keys["local"] == "project-workspace"
+
+
 def test_loads_resources_and_resolves_roots_relative_to_config(tmp_path: Path) -> None:
     data = tmp_path / "data"
     data.mkdir()
