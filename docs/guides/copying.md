@@ -30,6 +30,11 @@ Copy checks source `data.read` and destination `data.write` before opening eithe
 endpoint. The write grant includes replacement of whole filesystem trees,
 including removal of destination-only entries. It is not an append-only grant.
 
+Equal source/destination locations on the same named resource are rejected before
+claims or background jobs are created. Filesystem comparison uses normalized POSIX
+paths; object keys use exact strings. This check does not infer physical identity
+across aliases or resolve symbolic links. Backend checks still run under claims.
+
 Filesystem destinations are published only after both endpoints finish and the
 source still matches its initial snapshot. Failed publication attempts rollback.
 If rollback fails, Ridge retains staging and the previous destination at

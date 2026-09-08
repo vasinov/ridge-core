@@ -19,6 +19,7 @@ from ridge.config import load_configuration
 from ridge.errors import (
     AuthorizationDeniedError,
     ConfigurationError,
+    InvalidPathError,
     LockConflictError,
     LockOwnershipError,
     PathNotFoundError,
@@ -184,6 +185,43 @@ def test_known_local_data_error_releases_claim(tmp_path: Path) -> None:
     with pytest.raises(PathNotFoundError):
         service.read_data("a", "missing")
     service.write_data("a", "missing", b"created")
+
+
+@pytest.mark.parametrize("background", [False, True])
+@pytest.mark.parametrize("source", ["same", "./same", "nested/../same"])
+def test_equal_copy_rejected_before_claim_or_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, background: bool, source: str
+) -> None:
+    service = _service(tmp_path)
+    endpoint = Mock(side_effect=AssertionError("endpoint must not open"))
+    monkeypatch.setattr("ridge.backends.local.LocalResource.open_transfer_source", endpoint)
+    monkeypatch.setattr("ridge.backends.local.LocalResource.open_transfer_destination", endpoint)
+    with pytest.raises(InvalidPathError, match="different locations"):
+        (service.submit_copy if background else service.copy)(f"a:{source}", "a:same")
+    endpoint.assert_not_called()
+    assert not (tmp_path / ".ridge").exists()
+    service.write_data("a", "after-rejection", b"unblocked")
+    assert (tmp_path / "data/after-rejection").read_bytes() == b"unblocked"
+    assert service.list_jobs().jobs == ()
+
+
+@pytest.mark.parametrize("background", [False, True])
+def test_copy_authorization_precedes_location_validation(tmp_path: Path, background: bool) -> None:
+    service = _service(tmp_path, permissions="permissions: {a: [data.read]}\n")
+    with pytest.raises(AuthorizationDeniedError):
+        (service.submit_copy if background else service.copy)("a:same", "a:same")
+    assert not (tmp_path / ".ridge").exists()
+
+
+def test_copy_failure_after_dispatch_still_retains_claim(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    with pytest.raises(PathNotFoundError):
+        service.copy("a:missing", "c:output")
+    entries = cast(list[dict[str, object]], service.list_locks()["entries"])
+    assert len(entries) == 1 and entries[0]["status"] == "uncertain"
+    with pytest.raises(LockConflictError):
+        service.write_data("c", "unrelated", b"blocked")
+    assert not (tmp_path / "data/output").exists()
 
 
 def test_background_submission_and_claim_are_atomic_and_idempotent(

@@ -40,7 +40,7 @@ from ridge.resource import (
     StreamingComputeCapability,
 )
 from ridge.sessions import ManagedSession
-from ridge.transfer import copy
+from ridge.transfer import copy, validate_copy_locations
 
 
 class RidgeService:
@@ -419,16 +419,15 @@ class RidgeService:
             Operation.DATA_WRITE,
             {"path": destination_location.path, "source": source_location},
         )
+        request = CopyRequest(source=source_location, destination=destination_location)
+        validate_copy_locations(self._registry, request)
         with self._operation(
             (
                 JobScope(source_location.resource, Operation.DATA_READ),
                 JobScope(destination_location.resource, Operation.DATA_WRITE),
             )
         ):
-            return copy(
-                self._registry,
-                CopyRequest(source=source_location, destination=destination_location),
-            )
+            return copy(self._registry, request)
 
     def submit_copy(
         self,
@@ -458,6 +457,9 @@ class RidgeService:
                 "source": source_location,
                 "background": True,
             },
+        )
+        validate_copy_locations(
+            self._registry, CopyRequest(source=source_location, destination=destination_location)
         )
         scopes = (
             JobScope(source_location.resource, Operation.DATA_READ),

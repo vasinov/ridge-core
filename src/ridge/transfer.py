@@ -39,12 +39,15 @@ def _same_location(
     return posixpath.normpath(source.path) == posixpath.normpath(destination.path)
 
 
-def copy(registry: ResourceRegistry, request: CopyRequest) -> CopyResult:
-    raw_source_resource = registry.get(request.source.resource)
-    if _same_location(request.source, request.destination, raw_source_resource):
+def validate_copy_locations(registry: ResourceRegistry, request: CopyRequest) -> None:
+    """Reject known equal locations without invoking either endpoint."""
+    if _same_location(request.source, request.destination, registry.get(request.source.resource)):
         raise InvalidPathError("copy source and destination must be different locations")
 
-    source_resource = _transfer_capability(raw_source_resource)
+
+def copy(registry: ResourceRegistry, request: CopyRequest) -> CopyResult:
+    validate_copy_locations(registry, request)
+    source_resource = _transfer_capability(registry.get(request.source.resource))
     destination_resource = _transfer_capability(registry.get(request.destination.resource))
     started = time.monotonic()
     source: TransferSource | None = None

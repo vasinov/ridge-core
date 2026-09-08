@@ -4,11 +4,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from ridge.application import RidgeService
-from ridge.config import load_registry
+from ridge.config import load_configuration, load_registry
 from ridge.conformance import check_filesystem_capability
 from ridge.errors import (
     ConfigurationError,
@@ -18,7 +20,7 @@ from ridge.errors import (
 )
 from ridge.model import FileStat, ListEntry, Operation, ResourceProperty
 from ridge.provider import ProviderContext, ResourceProviderRegistry
-from ridge.resource import ResourceCapabilities
+from ridge.resource import Resource, ResourceCapabilities
 
 
 @dataclass
@@ -68,7 +70,7 @@ def test_installed_provider_constructs_composed_capability_without_core_dispatch
 ) -> None:
     config = tmp_path / "ridge.yaml"
     config.write_text(
-        "resources: {memory: {provider: fixture.memory, label: external}}",
+        "resources: {memory: {provider: fixture.memory, label: external, lock_key: shared}}",
         encoding="utf-8",
     )
     observed: list[tuple[Mapping[str, object], ProviderContext]] = []
@@ -200,3 +202,75 @@ def test_operations_expose_effect_metadata() -> None:
     assert Operation.COMPUTE_EXEC.effect == "execute"
     assert not Operation.COMPUTE_EXEC.idempotent
     assert Operation.DATA_WRITE.idempotent
+
+
+@pytest.mark.parametrize("permissions", ["", "\npermissions: {}\n"])
+@pytest.mark.parametrize(
+    ("field_name", "value", "message"),
+    [
+        ("name", None, "expected 'item'"),
+        ("provider_name", None, "returned provider"),
+        ("capabilities", None, "ResourceCapabilities"),
+        ("capabilities", {}, "ResourceCapabilities"),
+        ("capabilities", ["filesystem"], "ResourceCapabilities"),
+        ("capabilities", "readable", "ResourceCapabilities"),
+        ("inspect_properties", None, "callable inspect_properties"),
+        ("inspect_properties", {}, "callable inspect_properties"),
+    ],
+)
+def test_loading_rejects_malformed_resource_envelope(
+    tmp_path: Path, permissions: str, field_name: str, value: object, message: str
+) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text("resources: {item: {provider: fixture.memory}}" + permissions)
+    fields: dict[str, object] = {
+        "name": "item",
+        "provider_name": "fixture.memory",
+        "capabilities": ResourceCapabilities(filesystem=_MemoryFilesystem()),
+        "inspect_properties": dict,
+    }
+    if value is None:
+        del fields[field_name]  # Required attributes must exist, not just match when present.
+    else:
+        fields[field_name] = value
+    resource = cast(Resource, SimpleNamespace(**fields))
+    providers = ResourceProviderRegistry()
+    providers.register("fixture.memory", lambda name, config, context: resource)
+    with pytest.raises(ConfigurationError, match=message):
+        load_configuration(config, providers=providers)
+
+
+@pytest.mark.parametrize("permissions", ["", "\npermissions: {}\n"])
+def test_invalid_capability_construction_is_a_configuration_error(
+    tmp_path: Path, permissions: str
+) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text("resources: {item: {provider: fixture.memory}}" + permissions)
+
+    def provider(name: str, config: Mapping[str, object], context: ProviderContext) -> Resource:
+        del config, context
+        resource = _FixtureResource(name, "bad")
+        resource.capabilities = ResourceCapabilities(filesystem=object())  # type: ignore[arg-type]
+        return resource
+
+    providers = ResourceProviderRegistry()
+    providers.register("fixture.memory", provider)
+    with pytest.raises(ConfigurationError, match="filesystem capability"):
+        load_configuration(config, providers=providers)
+
+
+def test_envelope_validation_does_not_invoke_inspection(tmp_path: Path) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text("resources: {item: {provider: fixture.memory}}")
+
+    class ResourceWithUnavailableInspection(_FixtureResource):
+        def inspect_properties(self) -> Mapping[str, ResourceProperty]:
+            raise AssertionError("inspection must remain lazy")
+
+    providers = ResourceProviderRegistry()
+    providers.register(
+        "fixture.memory",
+        lambda name, config, context: ResourceWithUnavailableInspection(name, "ok"),
+    )
+    loaded = load_configuration(config, providers=providers)
+    assert loaded.registry.inspections()[0].name == "item"

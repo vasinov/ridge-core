@@ -198,7 +198,10 @@ changing Ridge core.
   Python entry-point group. The entry-point name is the configuration `provider`;
   its callable owns provider-specific validation and construction. Built-in
   names cannot be shadowed, duplicate registrations fail, and returned name and
-  `provider_name` must match the requested identity.
+  `provider_name` must match the requested identity. Before inventory publication,
+  returned resources must expose `ResourceCapabilities` and callable
+  `inspect_properties`, independently of permissions. Loading checks the envelope
+  without invoking inspection or exercising provider behavior.
 - The provider API extends resource implementations, not Ridge's operation
   vocabulary. New generic capabilities remain core design changes so CLI/MCP
   schemas, semantics, and authorization metadata cannot silently drift.
@@ -211,6 +214,11 @@ changing Ridge core.
   separate permission family. Copy preflights source `data.read` and destination
   `data.write`; the latter includes whole-tree replacement. Descriptive copy
   support does not imply that policy allows either endpoint.
+  Pure copy-location validation follows authorization and precedes foreground
+  claim or background job admission. Filesystem equality uses normalized POSIX
+  paths on one named resource; object keys remain exact. Backend-dependent checks
+  stay inside the admitted operation, whose failure retains existing uncertainty
+  rules. Direct coordinator callers use the same location validation.
 
 ## Authorization experiment
 

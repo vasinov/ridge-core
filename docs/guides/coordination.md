@@ -53,6 +53,10 @@ remain until active operations finish. Idle sessions are reclaimed on subsequent
 requests without a daemon. Release using the token remains possible after grants
 change. Tokens are returned only at acquisition and stored as hashes.
 
+Pure request checks run before admission: an equal-location copy rejection creates
+neither an operation claim nor a background job. Once backend dispatch begins,
+an error alone does not prove absence of effects or safe release.
+
 Foreground operations register before dispatch. A local ownership file identifies
 a live caller without trusting stored PIDs; loss marks the operation uncertain,
 not stopped. Background claims and jobs share an admission transaction. Supervisor startup

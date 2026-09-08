@@ -9,8 +9,8 @@ Installed Python distributions can add providers through the
 ```
 
 The callable receives the configured name, the provider-owned mapping without
-`provider`, and a `ProviderContext`. It returns a resource composed from Ridge's
-existing capabilities:
+the core-owned `provider` and `lock_key` fields, and a `ProviderContext`. It returns
+a resource composed from Ridge's existing capabilities:
 
 ```python
 from collections.abc import Mapping
@@ -40,8 +40,12 @@ def create_resource(
 ```
 
 The provider owns validation and construction of its configuration. Ridge
-rejects provider-name collisions, invalid capability objects, identity
-mismatches, and construction failures while loading the inventory.
+rejects provider-name collisions, identity mismatches, missing or incorrectly typed
+`ResourceCapabilities`, a missing/non-callable `inspect_properties`, and construction
+failures while loading the inventory, regardless of permissions. The capability
+collection validates its composition and required protocol members when constructed.
+Loading does not invoke inspection or prove method signatures, return values, or
+backend behavior; use conformance and acceptance tests for those contracts.
 
 The entry-point name is the YAML `provider` and must match the returned
 resource's `provider_name`. Compose at most one of `filesystem` and `storage`

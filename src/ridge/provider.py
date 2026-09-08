@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from ridge.errors import ConfigurationError
-from ridge.resource import Resource
+from ridge.resource import Resource, ResourceCapabilities
 
 PROVIDER_ENTRY_POINT_GROUP = "ridge.providers"
 _PROVIDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -90,14 +90,24 @@ class ResourceProviderRegistry:
             raise ConfigurationError(f"provider {provider_name!r} is not callable")
         provider = cast(ResourceProvider, loaded)
         resource = provider(name, config, context)
-        if resource.name != name:
+        returned_name = getattr(resource, "name", None)
+        if returned_name != name:
             raise ConfigurationError(
                 f"provider {provider_name!r} returned resource "
-                f"name {resource.name!r}, expected {name!r}"
+                f"name {returned_name!r}, expected {name!r}"
             )
-        if resource.provider_name != provider_name:
+        returned_provider = getattr(resource, "provider_name", None)
+        if returned_provider != provider_name:
             raise ConfigurationError(
-                f"provider {provider_name!r} returned provider {resource.provider_name!r}"
+                f"provider {provider_name!r} returned provider {returned_provider!r}"
+            )
+        if not isinstance(getattr(resource, "capabilities", None), ResourceCapabilities):
+            raise ConfigurationError(
+                f"provider {provider_name!r} resource {name!r} requires ResourceCapabilities"
+            )
+        if not callable(getattr(resource, "inspect_properties", None)):
+            raise ConfigurationError(
+                f"provider {provider_name!r} resource {name!r} requires callable inspect_properties"
             )
         return resource
 
