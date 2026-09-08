@@ -9,10 +9,12 @@ CLI or local MCP server. Agents use resource names instead of backend-specific
 transfer commands. Copies stream through Ridge without putting file contents
 in model context.
 
-Multiple agents can share resources through coordinated access: ordinary CLI and
-MCP operations acquire resource claims automatically, and explicit sessions reserve
-several resources across calls. Callers must share local Ridge state and matching
-resource lock keys. See [coordination and crash recovery](docs/guides/coordination.md).
+Ridge also gives multiple agents a shared resource-locking protocol. An agent
+copying files, editing data, or running a command can exclude conflicting Ridge
+operations on the same resource. Multi-resource sessions protect a sequence of
+calls, and adopting Python/MCP hosts can renew them automatically. Callers must
+share local Ridge state and matching resource lock keys; this does not lock out
+direct access outside Ridge. See [multi-agent coordination](docs/guides/coordination.md).
 
 > [!WARNING]
 > Ridge is public-alpha software for controlled, single-user environments. It
@@ -125,6 +127,11 @@ Installed Python packages can add [resource providers](docs/providers.md).
 
 ## Why use Ridge?
 
+- **Coordinate multiple agents on shared resources:** automatic resource locks
+  reject conflicting CLI/MCP operations; explicit sessions reserve resources
+  across a read/edit/test or copy/run/retrieve workflow. Managed caller sessions
+  renew leases without asking the model to remember deadlines. Ridge supplies
+  coordination, not agent orchestration or task scheduling.
 - **Less transfer glue and fewer tokens spent on it:** a named-resource copy
   avoids asking the model to generate, write, debug, and explain backend-specific
   transfer scripts. You still supply the analysis program.
@@ -149,6 +156,7 @@ The documentation source is in [`docs/`](docs/index.md):
 - [Configuration](docs/configuration.md)
 - [CLI](docs/cli.md) and [MCP](docs/mcp.md)
 - [Copy semantics](docs/guides/copying.md)
+- [Multi-agent locking and recovery](docs/guides/coordination.md)
 - [Background jobs](docs/guides/jobs.md)
 - [Architecture](docs/architecture.md)
 - [Resource providers](docs/providers.md)

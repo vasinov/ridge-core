@@ -3,6 +3,8 @@
 Ridge gives AI agents a small, explicit interface to named compute,
 filesystem, and object-storage resources. Backend mechanics stay behind one
 application contract exposed through both a CLI and a local MCP server.
+Resource locking lets multiple agents coordinate access to shared files and
+workers without inventing their own locking protocol for every backend.
 
 Ridge currently supports:
 
@@ -31,10 +33,15 @@ semantics consistent, rejects filesystem escapes, bounds data/execution output,
 and streams cross-resource transfers without placing complete files in model
 context.
 
-Agents sharing mutable resources can reserve them across calls, while ordinary
-CLI/MCP operations automatically participate in the same coordination rules.
-Shared local state and matching resource keys define the boundary; see
-[resource coordination](guides/coordination.md) for contention and crash recovery.
+**Multi-agent coordination is a core workflow.** Ordinary CLI/MCP calls acquire
+resource locks automatically: reads can share access, while writes and execution
+exclude conflicting operations. Explicit sessions reserve multiple resources
+across a sequence of calls, such as copying inputs, running a build, and retrieving
+its report. Managed Python/MCP caller sessions renew leases during long calls and
+model reasoning. Shared local state and matching resource keys define the boundary;
+direct access outside Ridge is not protected. Ridge does not launch agents,
+assign tasks, or schedule contenders. See [resource coordination](guides/coordination.md)
+for host integration, contention, and crash recovery.
 
 Named-resource copy avoids spending model tokens generating, writing, debugging,
 and explaining backend-specific transfer glue. Copy relays payloads with bounded

@@ -5,6 +5,10 @@ execution or data environments, act on them, and reconnect to the result.
 It supplies resource discovery, common operations, streamed copy, and job
 observation—not the domain program or its dependencies.
 
+It also coordinates multiple agents sharing mutable resources. Automatic locking
+protects individual calls; explicit sessions keep a task's resource reservation
+across calls, with automatic renewal available to adopting Python/MCP hosts.
+
 ## Runnable walkthrough
 
 [Managed caller sessions](../guides/coordination.md#managed-caller-sessions) includes
@@ -22,6 +26,22 @@ benchmarks. Resource names, scripts, data, and dependencies must already exist.
 Discover supported and allowed operations first. After submitting a job, inspect
 its status and command exit code before retrieving outputs; substitute its actual
 job ID in the [job observation commands](../guides/jobs.md).
+
+### Multiple agents sharing a build worker
+
+Suppose two agents use the same `builder`. Agent A reserves the required source,
+builder, and report resource/operation pairs before copying its inputs, running
+tests, and retrieving results. Agent B's conflicting Ridge calls fail while that
+reservation is held; B can continue work on independent resources. Shared read
+access to source data need not exclude other readers.
+
+Both callers must use the same local state directory and matching resource lock
+keys, and A must attach its session token to every participating call. A managed
+caller session handles token attachment and renewal; it does not queue B's task
+or decide when B should retry. Read [multi-agent coordination](../guides/coordination.md)
+and the runnable managed-session example before adapting the recipes below for
+shared workers. A sequence of ordinary CLI calls alone does not reserve the gaps
+between operations.
 
 ### ML experiments
 

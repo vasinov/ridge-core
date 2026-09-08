@@ -1,5 +1,28 @@
 # Resource coordination
 
+## Why locking matters for multiple agents
+
+Agents working in parallel can otherwise overwrite each other's inputs, replace
+a directory while another agent is using it, or run conflicting commands in the
+same worker. Ridge provides cooperative resource locks across CLI and MCP callers
+so each agent does not need to invent backend-specific coordination glue.
+
+Ordinary calls protect one operation at a time. A multi-step task needs an explicit
+session: for example, reserve a worker before copying inputs, keep it reserved
+while running the program, and retrieve its output before releasing it. Without
+that session, another agent could acquire the worker between those calls. Managed
+caller sessions handle renewal during long operations and model reasoning.
+
+Locks apply to resource keys, not individual file paths: two writes to different
+files in one resource still conflict. Independent resources can be used in
+parallel, and shared reads can coexist. Prefer separate working areas for tasks
+that do not need to share mutable state; use matching lock keys for aliases or
+overlapping roots that do. This supports multi-agent workflows, including those
+called agent swarms, but Ridge does not create agents, assign tasks, or schedule
+their work. Direct tools and undeclared command effects remain outside protection.
+
+## Coordination boundary
+
 Ridge coordinates participating CLI and MCP callers through a shared local SQLite
 database. `state.directory` defaults to `.ridge` beside the configuration and
 contains `state.sqlite3` plus job and operation artifacts. It replaces
