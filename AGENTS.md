@@ -175,13 +175,32 @@ transfers alone do not prove failure cleanup.
   notes still need coordination. Do not modify or delete another task's branch
   or worktree. Read-only helpers may share a task worktree; concurrent editing
   helpers require explicitly coordinated file ownership or separate worktrees.
-- Commit verified task-owned changes on the task branch. Report its branch,
-  worktree path, commit, checks, and integration status. Integrate completed
-  branches one at a time through a designated agent or maintainer, into a
-  checkout that is not in active use and has a clean working tree. Review the
-  combined behavior even when Git merges without conflicts, and run checks
-  appropriate to the integrated changes. Resolve mechanical conflicts within
-  the approved scope; bring unresolved behavioral decisions to the user.
+- Finishing a task includes local integration of its verified commits; agents
+  may integrate their own completed branches without asking again. Use the
+  primary checkout as the integration checkout unless the maintainer designates
+  another. Do not integrate into a checkout in use for another editing task.
+- Serialize integration with `scripts/with_integration_lock.py`: run it with the
+  project's Python interpreter from the integration checkout, followed by `--`
+  and the command to run. It holds an OS lock at `ridge-integration.lock` in
+  Git's common directory, shared by all worktrees. Hold it across target/status
+  rechecks, integration, combined verification, and any authorized push. Use one
+  wrapped command or script for that whole sequence, not separate lock calls.
+  Never delete the lock file or treat its existence as evidence of ownership;
+  the OS releases ownership when the holder and inherited holders exit.
+- The wrapper waits up to 30 seconds and exits 75 if busy. Wait and retry rather
+  than handing off immediately; report a blocker only when safe progress is not
+  possible. All agents modifying the integration checkout must use this lock;
+  it cannot coordinate tools that bypass it.
+- After acquiring the lock, recheck the target branch, clean working tree,
+  current target HEAD, and commits being integrated. Fast-forward when possible;
+  otherwise merge without rewriting history. Review combined behavior even when
+  Git reports no conflicts and run checks appropriate to the combined changes.
+  Resolve mechanical conflicts within the approved scope; ask about conflicting
+  intent or material design decisions. Do not push if verification fails, and
+  report the preserved local state rather than resetting others' work.
+- Report the task commit, checks, integration result, and anything still pending.
+  Local integration does not authorize a push; publication still requires an
+  explicit user request. A rejected push is not permission to force-push.
 - Never automatically relocate an already-running agent. Retain a worktree
   while it is in use or has unpreserved work; remove it only after verifying
   its changes are safely preserved and no agent is using it. Do not force
