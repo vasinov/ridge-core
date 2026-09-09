@@ -17,8 +17,19 @@ caller sessions handle renewal during long operations and model reasoning.
 S3 read/stat/write/delete and copy endpoints lock exact objects, so operations on
 different keys can overlap. Filesystem operations and compute still lock whole
 resources: two writes to different files in one resource conflict. Shared reads
-can coexist. Prefer separate working areas for independent tasks; use matching
-lock keys for aliases or overlapping roots.
+can coexist. Use matching lock keys for aliases or overlapping roots.
+
+## Isolation and coordination work together
+
+Copy-on-write environments give agents independent working copies. Ridge lets a
+parent delegate access to those existing environments and other resources, while
+coordinating operations on shared targets. Use separate working areas for
+independent tasks and shared-resource coordination where work must meet.
+
+Copying a filesystem does not duplicate the GPU, remote service, or shared output
+destination behind a task. Those resources still need access rules and
+coordination. Ridge does not provision copy-on-write environments or merge
+conflicting results; it complements the isolation your environment provides.
 
 ## Coordination boundary
 
