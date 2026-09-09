@@ -58,10 +58,14 @@ shows the commands and provides bundled inputs.
   with a separate `data.delete` grant, in foreground or background.
   See [deletion semantics](https://vasinov.github.io/ridge-core/concepts/resources/#deletion).
 
-Coordination requires shared local Ridge state and matching resource lock keys;
-it does not exclude access outside Ridge. See [multi-agent coordination](https://vasinov.github.io/ridge-core/guides/coordination/).
+Agents using the same workspace share local Ridge state and resource lock keys.
+See [multi-agent coordination](https://vasinov.github.io/ridge-core/guides/coordination/).
 
-## Define your resources
+## Configure your workspace
+
+A **Ridge workspace** is your resource inventory, permission policy, and managed
+state for jobs and coordination. Define it with a YAML configuration; it need not
+be a single directory or repository. Resources can live on different machines.
 
 Here is a local `ridge.yaml` for the example above:
 
@@ -88,7 +92,9 @@ reading inputs, running code on the worker, and saving and reading reports.
 Change the worker's provider configuration to use Docker or SSH while keeping
 the resource name and agent workflow.
 
-Ridge loads `./ridge.yaml` by default; use `--config PATH` for another inventory.
+Ridge loads `./ridge.yaml` by default; use `--config PATH` to select a workspace's
+configuration. Managed state defaults to `.ridge` beside that file. Use the same
+configuration for participating agents; no workspace creation command is needed.
 Run `ridge config validate` to check it and review effective grants without
 running resource operations. For agent-assisted configuration, use the
 [ridge-setup skill](skills/ridge-setup/SKILL.md) with installed Ridge; see

@@ -5,9 +5,13 @@ description: Prepare or update a Ridge YAML resource inventory from a user's wor
 
 # Ridge setup
 
-Turn the user's intended workflow into a reviewed, valid Ridge inventory. Ridge
+Turn the user's intended workflow into a reviewed, valid Ridge workspace
+configuration: resource inventory, permission policy, and managed state. Ridge
 must already be installed, and you need host file access; Ridge MCP cannot edit
 its own configuration. Do not assume access to a Ridge source checkout.
+Workspace is the name for these existing parts, not a new file format or directory
+layout. Keep participating callers on the chosen configuration and state; do not
+create a separate inventory per child or invent delegated-scope commands.
 
 ## Establish the workflow
 

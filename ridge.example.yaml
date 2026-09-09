@@ -1,4 +1,5 @@
-# Check this inventory with: ridge --config ridge.example.yaml config validate
+# Workspace configuration: resource inventory, policy, and managed state.
+# Check it with: ridge --config ridge.example.yaml config validate
 # Validation checks the loader, not backend connectivity or safe state placement.
 # Optional; defaults to .ridge beside this YAML file. Keep durable state outside
 # resource trees that agents might copy, replace, or delete. This example uses root: .,

@@ -1,6 +1,18 @@
 # Configuration
 
-A Ridge configuration is a YAML inventory of uniquely named resources:
+## Workspace
+
+A **Ridge workspace** consists of a resource inventory, its permission policy,
+and managed state for jobs and coordination. The YAML configuration selects these
+parts; resources themselves may live on different machines or services. A workspace
+is not necessarily a directory, repository, or agent conversation.
+
+Use the same configuration for participating CLI and MCP callers. There is no
+workspace creation command or additional file format. State is initialized when
+needed by runtime workflows, not by configuration validation. The configuration
+remains authoritative; workspace terminology does not add per-agent permissions.
+
+The inventory contains uniquely named resources:
 
 ```yaml
 resources:
@@ -86,8 +98,8 @@ redaction. Review before sharing.
 ## Agent-assisted setup
 
 The repository-owned [ridge-setup skill](https://github.com/vasinov/ridge-core/tree/main/skills/ridge-setup)
-guides an agent from your workflow to an explicit inventory. Give the agent that
-skill directory (or ask it to read its `SKILL.md`), the installed Ridge executable,
+guides an agent from your workflow to an explicit workspace configuration. Give
+the agent that skill directory (or ask it to read its `SKILL.md`), the installed Ridge executable,
 the intended configuration path, and the actual targets and operations you want.
 For example: “Use ridge-setup to let me read this input directory and run analysis
 in that workspace, without granting deletion.” Client-specific installation and

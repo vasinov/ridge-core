@@ -5,7 +5,8 @@
 Agents working in parallel can otherwise overwrite each other's inputs, replace
 a directory while another agent is using it, or run conflicting commands in the
 same worker. Ridge provides cooperative resource locks across CLI and MCP callers
-so each agent does not need to invent backend-specific coordination glue.
+within a [workspace](../configuration.md#workspace), so each agent does not need
+to invent backend-specific coordination glue.
 
 Ordinary calls protect one operation at a time. A multi-step task needs an explicit
 session: for example, reserve a worker before copying inputs, keep it reserved
@@ -17,21 +18,20 @@ Locks apply to resource keys, not individual file paths: two writes to different
 files in one resource still conflict. Independent resources can be used in
 parallel, and shared reads can coexist. Prefer separate working areas for tasks
 that do not need to share mutable state; use matching lock keys for aliases or
-overlapping roots that do. Direct tools and undeclared command effects remain
-outside protection.
+overlapping roots that do.
 
 ## Coordination boundary
 
-Ridge coordinates participating CLI and MCP callers through a shared local SQLite
-database. `state.directory` defaults to `.ridge` beside the configuration and
+Ridge coordinates a workspace's participating CLI and MCP callers through a shared
+local SQLite database. `state.directory` defaults to `.ridge` beside the configuration and
 contains `state.sqlite3` plus job and operation artifacts. Keep state outside copied
 or replaced/deleted trees and on a local filesystem. Separate state directories do not
 coordinate, including when their inventories refer to the same remote targets.
 
 Each resource optionally declares `lock_key`, defaulting to its name. Equal keys
 within one state directory share coordination. Configure equal keys for aliases
-or overlapping roots; Ridge does not infer physical identity. Coordination is
-advisory at Ridge's application boundary, not a remote lock.
+or overlapping roots; Ridge does not infer physical identity. The
+[security model](../security.md) defines the participation boundary.
 
 Reads, lists, and stats take shared claims. Writes, deletion, and execution take exclusive
 claims. Copy takes shared source and exclusive destination claims, combining equal
@@ -71,9 +71,8 @@ bounded and filtered by current grants. Force-release requires current grants fo
 all affected scopes and an explicit reason; it records that reason and does not
 cancel execution. Inspect external effects before overriding uncertain ownership.
 
-Arbitrary commands may modify resources they did not declare, and external tools
-can bypass Ridge entirely. Separate working areas remain useful. A session protects
-a sequence only if callers use its token for every participating operation.
+A session protects a sequence only if callers use its token for every
+participating operation.
 
 ## Example session
 

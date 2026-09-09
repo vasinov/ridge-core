@@ -4,6 +4,10 @@ Give your AI agents one way to work with local files, Docker containers, SSH
 hosts, and S3. Ridge exposes named resources through a CLI and a local MCP
 server: discover what is available, move data, run programs, and retrieve results.
 
+Configure a [workspace](configuration.md#workspace): a named resource inventory,
+permission policy, and managed job/coordination state shared by participating agents.
+Its resources can span machines and services; no new directory layout is required.
+
 ## Start with a task
 
 > Run the sales analysis from `inputs` on `worker`. Save the report in `reports`

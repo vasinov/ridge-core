@@ -1,9 +1,14 @@
 # Security model
 
-Ridge supports one trusted operator with multiple cooperating agents. Its optional
+Ridge supports one trusted operator with multiple cooperating agents in a
+[workspace](configuration.md#workspace). Its optional
 exact permission policy controls resource operations through the application
 service shared by CLI and MCP. It is not a sandbox: process authority and direct
 access remain governed by the operating system and downstream services.
+
+The operating model is one authoritative configuration and shared managed state,
+possibly used by several CLI/MCP processes. Coordination and policy apply to those
+participating requests, not unrelated configurations or external interventions.
 
 ## Ambient authority
 

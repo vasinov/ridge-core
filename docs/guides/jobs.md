@@ -2,7 +2,9 @@
 
 Execution, data writes, deletion, and copy can run as durable
 background jobs. The operation itself remains in its ordinary CLI command or
-MCP tool; the `jobs` namespace is only for lifecycle management.
+MCP tool; the `jobs` namespace is only for lifecycle management. Jobs belong to
+the [workspace's managed state](../configuration.md#workspace), not the client
+conversation that submitted them. Reconnect using the same configuration.
 
 ```console
 $ ridge exec local --background -- python -c 'print("done")'

@@ -12,6 +12,11 @@ changing Ridge core.
 
 ## Ownership
 
+A [workspace](configuration.md#workspace) names the inventory, selected policy,
+and managed state already owned by configuration, authorization, and jobs/coordination.
+It adds no runtime container or configuration schema. Participating frontends use
+the same authoritative configuration; resources may span multiple backends.
+
 - `model` owns backend-neutral values and operation names.
 - `resource` owns capability protocols and the typed capability collection.
   Resource identity is separate from the compute, filesystem, storage, and
@@ -236,6 +241,10 @@ changing Ridge core.
   rules. Direct coordinator callers use the same location validation.
 
 ## Authorization
+
+The [delegated task access design](concepts/authorization.md#delegated-task-access-design)
+records the accepted direction and remaining decisions separately from the current
+process-wide policy below. Delegation and granular lock footprints are not implemented.
 
 `authorization` owns policy decisions; `application` checks them before invoking
 capabilities through either frontend. Copy checks both endpoints before opening

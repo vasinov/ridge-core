@@ -49,11 +49,13 @@ The distribution is named `ridge-core`; the import and command are `ridge`.
 For development instead, use `uv sync` and `. .venv/bin/activate`.
 Keep the environment active so `ridge` and `python3` are available on `PATH`.
 
-## Create the demo
+## Create the demo workspace
 
 Run the following from the checkout root, using a fresh `ridge-demo` directory.
 The bundled [inventory](examples/assets/ridge.yaml) defines `inputs`, `worker`,
-and `reports` as local resources. Create every root before discovery.
+and `reports` as local resources. Together with its policy and managed state,
+this configuration defines a [Ridge workspace](configuration.md#workspace).
+Create every root before discovery.
 
 ```bash
 mkdir -p ridge-demo/inputs ridge-demo/worker ridge-demo/reports
@@ -77,7 +79,7 @@ read grants; the worker allows execution and data access. Use `ridge inspect wor
 for detailed properties. See [Authorization](concepts/authorization.md).
 
 Ridge loads `./ridge.yaml` by default. Use `ridge --config PATH COMMAND` or
-`RIDGE_CONFIG` to select another inventory. Relative roots resolve from the
+`RIDGE_CONFIG` to select a workspace's configuration. Relative roots resolve from the
 configuration file, not the invocation directory.
 
 ## Platform expectations

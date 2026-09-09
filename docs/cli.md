@@ -1,7 +1,8 @@
 # CLI
 
 The `ridge` command is a Typer frontend over the same application service used
-by MCP.
+by MCP. Select the [workspace configuration](configuration.md#workspace) with
+`--config PATH` or `RIDGE_CONFIG`; the default is `./ridge.yaml`.
 
 ```text
 ridge --config PATH config validate [--json]

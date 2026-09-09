@@ -1,7 +1,8 @@
 # MCP server
 
-`ridge-mcp` exposes the configured inventory over local stdio using the
-official MCP Python SDK. It has no network listener.
+`ridge-mcp` exposes a [workspace's](configuration.md#workspace) configured resources
+over local stdio using the official MCP Python SDK. Point participating clients
+at the same configuration to share policy and managed state. It has no network listener.
 
 For Codex, configure absolute paths:
 
