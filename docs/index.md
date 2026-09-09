@@ -2,10 +2,18 @@
 
 Give your agent resources. Let it build the team.
 
-Ridge connects agents to resources such as local projects, remote compute,
-containers, and cloud storage. A main agent can delegate tailored access to
-subagents, coordinate shared work, and bring back results—all within permissions
-you establish.
+Ridge works with **Codex, Claude Code, and agents built with LangChain**, connecting
+them to resources such as local projects, remote compute, containers, and cloud storage.
+
+Your agent discovers what's available, delegates tailored access to subagents,
+and brings their results together. Each child gets the resources and permissions
+its task needs, while Ridge coordinates shared work and keeps access within the
+boundaries you establish.
+
+**Configure access once. Let agents divide it up for the task.**
+
+Connect through MCP, bundle Ridge's skill and tools as a local plugin, or build
+on its Python API. [Connect your agent →](integrations.md)
 
 ## From a request to delegated work
 
@@ -16,7 +24,7 @@ to run the evaluations.
 > Compare these approaches. Have an agent evaluate each against the dataset,
 > save their results, and tell me which performs better.
 
-The main agent discovers available resources, derives a scope for each child,
+The parent agent discovers available resources, derives a scope for each child,
 and has its harness launch the children with those bindings. Each child receives
 read access to the inputs, its own worker, and a separate results location.
 The parent follows their jobs, compares reports, and closes task access.

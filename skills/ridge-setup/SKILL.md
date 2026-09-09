@@ -18,7 +18,7 @@ policy, and shared managed state. Ridge must already be installed.
   configuration, then follow the setup and validation sections below. This requires
   host file access; Ridge MCP cannot edit its own configuration.
 
-The operator establishes initial authority; the main agent derives tailored access
+The operator establishes initial authority; the parent agent derives tailored access
 within it. The harness owns child spawning and binding. Do not assume access to a
 Ridge source checkout.
 

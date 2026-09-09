@@ -138,7 +138,7 @@ def run(directory: Path, client: str, executable: Path) -> dict[str, Any]:
     )
     parent = RidgeService.from_config(config, scope_token=issued.token)
     try:
-        print(f"{client}: main agent selecting and issuing task access", file=sys.stderr)
+        print(f"{client}: parent agent selecting and issuing task access", file=sys.stderr)
         task = invoke(
             client,
             config,

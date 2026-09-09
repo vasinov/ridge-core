@@ -100,7 +100,7 @@ def run_demo(directory: Path) -> dict[str, object]:
         )
     )
     operator = RidgeService.from_config(config)
-    # One-time operator bootstrap. The main agent delegates without operator access.
+    # One-time operator bootstrap. The parent agent delegates without operator access.
     parent_scope = operator.create_scope(
         [
             AccessGrant(name, READ if name == "results" else frozenset(), ops)

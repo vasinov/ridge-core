@@ -1,6 +1,6 @@
 # A delegated task, end to end
 
-A main agent can derive access for children without returning to the operator for
+A parent agent can derive access for children without returning to the operator for
 every task. This example makes the handoff concrete: a scoped parent creates two
 children, launches separate processes, supervises their background jobs, and
 reconnects them to publish results before closing access.
@@ -38,7 +38,7 @@ make it easy to inspect the result; they are not performance measurements.
 ## What happens
 
 1. **Bootstrap once.** Create a workspace with shared read-only inputs, two local
-   workers, and results directories. The operator issues the main agent a scope
+   workers, and results directories. The operator issues the parent agent a scope
    with delegation authority and read access to results.
 2. **The parent divides access.** The scope-bound parent—not the operator—issues
    each child read access to inputs, access to one worker, and a rooted results view.

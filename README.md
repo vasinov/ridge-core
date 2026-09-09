@@ -7,20 +7,28 @@
 
 Give your agent resources. Let it build the team.
 
-Ridge connects AI agents to resources such as local projects, remote compute,
-containers, and cloud storage. Agents can delegate tailored access to subagents,
-coordinate shared work, and bring back results—all within permissions you establish.
+Ridge works with **Codex, Claude Code, and agents built with LangChain**, connecting
+them to resources such as local projects, remote compute, containers, and cloud storage.
 
-Configure access once. Let agents divide it up for the task.
+Your agent discovers what's available, delegates tailored access to subagents,
+and brings their results together. Each child gets the resources and permissions
+its task needs, while Ridge coordinates shared work and keeps access within the
+boundaries you establish.
+
+**Configure access once. Let agents divide it up for the task.**
+
+Bring your existing tools: connect through MCP, bundle Ridge's skill and tools as
+a local plugin, or build on its Python API.
+[Connect your agent →](https://vasinov.github.io/ridge-core/integrations/)
 
 ## From one request to a team of agents
 
-An agent can use Ridge to split a project across subagents, giving each access to
-the resources it needs. Consider comparing two approaches to a data-analysis
-problem: the code lives locally, the dataset is in cloud storage, and execution
-happens on remote workers.
+Compare two approaches to a data-analysis problem. The project lives on your
+laptop, the dataset is in cloud storage, and two remote workers are available to
+run the evaluations. With these resources connected through Ridge, your agent
+can divide the work and give each child its own access.
 
-You ask the main agent:
+You ask:
 
 > Compare these two approaches. Have an agent evaluate each against the dataset,
 > save their results, and tell me which performs better.

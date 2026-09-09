@@ -1,12 +1,12 @@
 # Agent-led handoff
 
-The main agent chooses a child's access; the host delivers it to a separate
+The parent agent chooses a child's access; the host delivers it to a separate
 agent process. Ridge supplies the same resource operations and shared state to
 both. No child inventory or operator policy edit is needed.
 
 The repository includes `integrations/agent_demo.py`, a small executable host
 for Codex CLI and Claude Code CLI. Unlike the [scripted example](../examples/delegation.md),
-the main model discovers the workspace and issues the child scope itself. A
+the parent agent discovers the workspace and issues the child scope itself. A
 child model copies input, submits a bounded calculation, and a fresh child
 process reconnects to publish its result.
 
