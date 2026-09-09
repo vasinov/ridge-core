@@ -52,7 +52,7 @@ Ridge stores their hashes, but a host receiving `create_scope` can retain the
 returned handle in its transcript. Pass handles through protected token files or
 process environment, not prompts or per-tool arguments. Invalid binding fails
 closed. Scope revocation closes future access; cancelling running work remains
-separate. See [delegation](concepts/authorization.md#create-bind-and-close-a-task).
+separate. See [delegation](guides/delegation.md).
 
 Ridge removes ambient `RIDGE_SCOPE_TOKEN` from local compute and job-supervisor
 environments. Explicit command environment values are still caller data; this is

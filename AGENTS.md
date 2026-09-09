@@ -2,8 +2,9 @@
 
 ## Mission
 
-Ridge is an experimental resource abstraction layer for AI agents. It gives a
-caller named resources with explicit capabilities while keeping backend
+Ridge is a resource mesh for AI agents. A workspace defines named resources,
+policy, and shared managed state. Agents derive tailored access for subagents
+while Ridge mediates resource operations and coordination, keeping backend
 mechanics outside agent reasoning. Ridge is not an orchestrator, scheduler,
 sandbox, or hosted control plane.
 

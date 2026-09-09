@@ -8,12 +8,12 @@ For delegated tasks, start a separate connection/process with `RIDGE_SCOPE_TOKEN
 or `--scope-token-file PATH`. The handle is captured at startup, while authority is
 rechecked for each call. Never pass access handles as individual tool arguments.
 `inspect_access`, `create_scope`, `list_scopes`, `inspect_scope`, and `revoke_scope`
-share the [task delegation contract](concepts/authorization.md#create-bind-and-close-a-task)
+share the [task delegation contract](guides/delegation.md)
 with CLI/Python. `create_scope` accepts a list of structured resource grants and
 optional absolute `expires_at`; only its result includes the new bearer token.
 Grant `data_root` narrows data addressing relative to the parent view;
 `inspect_access` reports the inherited `data_root_chain`. See
-[rooted data semantics](concepts/authorization.md#narrow-data-views) before using
+[rooted data semantics](guides/delegation.md#narrow-data-views) before using
 compute alongside a narrower data grant.
 
 For Codex, configure absolute paths:
@@ -52,10 +52,10 @@ operations allowed by the configured Ridge policy. They also report canonical
 background-capable operations when durable jobs are available, plus `provider`,
 `addressing`, and `supports_copy`. Copy remains a separate application workflow.
 
-For a task-oriented introduction, follow the [agent sales-report example](examples/csv-report.md#with-an-agent):
-discover resources, copy inputs, execute the analysis, check the result, and
-read the report. The [example recipes](examples/index.md) extend that pattern
-to ML, builds, science, and media.
+Start with [delegating work](guides/delegation.md): the parent agent derives
+access, the host binds child connections, and each child uses these ordinary tools.
+The [sales-report example](examples/csv-report.md#with-an-agent) demonstrates the
+copy/run/retrieve portion; [integrations](integrations.md) covers connection choices.
 
 Data tools use `path` for either a relative filesystem path or an exact object
 key/prefix. `list_data` accepts `cursor` and `limit` and returns `addressing`,

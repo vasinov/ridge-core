@@ -1,26 +1,24 @@
 # Examples
 
-Give an agent a task that spans resources: train on a GPU worker, test a project
-in a container, or turn a stored video into a preview. Ridge lets it discover
-the available operations, move the inputs, run the program, and retrieve results
-through the same interface.
+Ridge lets an agent divide work across resources and subagents, then retrieve the
+results. Start with a runnable workflow; use the recipes below for existing
+infrastructure and tools.
 
-It also coordinates multiple agents sharing mutable resources. Automatic locking
-protects individual calls; explicit sessions keep a task's resource reservation
-across calls, with automatic renewal available to adopting Python/MCP hosts.
+## Start here
 
-## Start with an agent task
+- [Delegated task handoff](delegation.md): a scoped parent derives child access,
+  binds separate processes, supervises background work, and closes the scopes.
+  Runs locally without a model account.
+- [First local workflow](../getting-started.md): bundled inputs and commands for
+  copy, execute, and retrieve.
+- [Sales report with an agent](csv-report.md#with-an-agent): the same workflow
+  through MCP, plus a Docker worker and direct-tool comparison.
 
-> Run the sales analysis from `inputs` on `worker`. Save the report in `reports`
-> and tell me the revenue by region.
-
-[Sales CSV to regional report](csv-report.md#with-an-agent) follows this request
-through MCP discovery, copy, execution, and report reading. It also covers
-background observation, a Docker worker, and a direct-tool comparison. The
-[local quickstart](../getting-started.md) supplies runnable inputs and setup.
-
-[Managed caller sessions](../guides/coordination.md#managed-caller-sessions) shows
-how a Python MCP host keeps a multi-call reservation alive across lease periods.
+An agent can combine these patterns: select each child's existing resources,
+derive access, and dispatch the child through its harness. Read
+[delegating work](../guides/delegation.md) for that lifecycle, and
+[managed caller sessions](../guides/coordination.md#managed-caller-sessions)
+when a child needs a multi-step reservation.
 
 ## Illustrative recipes
 

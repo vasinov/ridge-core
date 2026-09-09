@@ -2,16 +2,17 @@
 
 ## Workspace
 
-A **Ridge workspace** consists of a resource inventory, its permission policy,
-and managed state for jobs and coordination. The YAML configuration selects these
-parts; resources themselves may live on different machines or services. A workspace
+A **workspace defines your resource mesh**: the resources agents can access,
+the permissions they can delegate, and the shared state that coordinates their work.
+The YAML configuration selects these parts; resources themselves may live on
+different machines or services. A workspace
 is not necessarily a directory, repository, or agent conversation.
 
 Use the same configuration for participating CLI and MCP callers. There is no
 workspace creation command or additional file format. State is initialized when
 needed by runtime workflows, not by configuration validation. The configuration
-remains authoritative; [task scopes](concepts/authorization.md#delegated-task-access-design)
-derive narrower access without separate child inventories.
+establishes the initial authority. Agents [derive task access](guides/delegation.md)
+for their children without separate inventories or per-task policy edits.
 
 The inventory contains uniquely named resources:
 
@@ -160,9 +161,10 @@ Built-ins support `data.delete`; grant it explicitly only where cleanup is inten
 It requires no `data.stat` grant. Keep `state.directory` outside trees callers can
 delete or replace; the example inventory deliberately adds no deletion grants.
 
-Permissions apply to operations performed through Ridge. Resource discovery and
-inspection remain available and expose configured properties plus supported and
-allowed operations. See [Authorization](concepts/authorization.md) for enforcement
+Permissions apply to operations performed through Ridge. Operator discovery and
+inspection expose all configured resources and properties plus supported and
+allowed operations. Scope-bound discovery shows only the task's granted resources.
+See [Authorization](concepts/authorization.md) for enforcement
 and the relationship to downstream permissions.
 
 ## Delegation policy
@@ -181,10 +183,11 @@ delegation:
 ```
 
 Here only `data.read` is delegable; `data.stat` is usable but not delegable.
+For children that need MCP inline reads, delegate both read and stat.
 Configuration validation reports the effective intersection without creating state.
 The map is the operator ceiling for `scope create` and the equivalent MCP tool.
 Task handles bind resource subsets and optional narrower data roots without
-rewriting the inventory. See [task delegation](concepts/authorization.md#delegated-task-access-design).
+rewriting the inventory. See [task delegation](guides/delegation.md).
 
 See the resource-specific pages for complete semantics:
 

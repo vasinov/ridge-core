@@ -2,22 +2,53 @@
 
 from __future__ import annotations
 
+import ast
 import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
-from ridge import RidgeService
+from ridge import AccessGrant, Operation, RidgeService
 
 
-def test_readme_inventory_matches_runnable_example() -> None:
+def test_readme_scope_example(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
-    inventories = re.findall(r"```yaml\n(.*?)```", (root / "README.md").read_text(), re.DOTALL)
-    assert len(inventories) == 1
-    expected = yaml.safe_load((root / "docs/examples/assets/ridge.yaml").read_text())
-    assert yaml.safe_load(inventories[0]) == expected
+    blocks = re.findall(r"```python\n(.*?)```", (root / "README.md").read_text(), re.DOTALL)
+    call = ast.parse(blocks[0]).body[0]
+    assert isinstance(call, ast.Expr) and isinstance(call.value, ast.Call)
+    grants: list[dict[str, Any]] = ast.literal_eval(call.value.keywords[0].value)
+    policy = {grant["resource"]: grant["operations"] for grant in grants}
+    for name in policy:
+        (tmp_path / name).mkdir()
+    (tmp_path / "results/comparison/a").mkdir(parents=True)
+    config = tmp_path / "ridge.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "resources": {name: {"provider": "local", "root": name} for name in policy},
+                "permissions": policy,
+                "delegation": policy,
+            }
+        )
+    )
+    parent = RidgeService.from_config(config)
+    issued = parent.create_scope(
+        [
+            AccessGrant(
+                grant["resource"],
+                frozenset(Operation(op) for op in grant["operations"]),
+                data_root=grant.get("data_root"),
+            )
+            for grant in grants
+        ]
+    )
+    child = RidgeService.from_config(config, scope_token=issued.token)
+    child.write_data("results", "metrics.json", b'{"score": 10}')
+    assert (tmp_path / "results/comparison/a/metrics.json").read_bytes() == b'{"score": 10}'
+    parent.revoke_scope(issued.scope.id)
 
 
 def test_csv_walkthrough_assets(tmp_path: Path) -> None:

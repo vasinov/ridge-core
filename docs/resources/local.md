@@ -26,7 +26,7 @@ Without permissions, local resources allow both execution and data operations.
 The root defaults to the configuration
 directory when omitted; configured roots must already exist.
 
-Delegated grants can select a narrower [`data_root`](../concepts/authorization.md#narrow-data-views).
+Delegated grants can select a narrower [`data_root`](../guides/delegation.md#narrow-data-views).
 Each view directory must exist when used; scope creation does not create it.
 Data paths are view-relative, while compute and its `--cwd` retain the configured root.
 

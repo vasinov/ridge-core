@@ -36,7 +36,10 @@ denial tests the host's gate, not Ridge's policy enforcement.
 
 Follow the contributor instructions' documentation-impact review with each change:
 update current contracts in their owning pages, consolidate repeated explanations,
-and preserve actionable safety and recovery guidance.
+and preserve actionable safety and recovery guidance. Review the relevant skills
+and harness instructions too. The [delegation example](examples/delegation.md)
+has process-level regression coverage; the README's scope grant is exercised
+against a disposable workspace, not checked only for matching text.
 
 Never use valuable data for destructive conformance or whole-tree replacement
 tests. Create unique disposable roots/prefixes, bound payloads and time, and
@@ -55,7 +58,7 @@ The `Tests` GitHub Actions workflow runs on pull requests to `main`, pushes to
 `main`, and manual runs. It installs locked dependencies and runs the deterministic
 test suite on Linux with Python 3.11–3.14 and on macOS with Python 3.14. A separate
 Linux job runs lint, formatting, type checks, and wheel/source-distribution builds.
-The README badge reports the complete workflow's status on `main`.
+The repository's Actions tab reports workflow status and individual check results.
 
 These checks do not require cloud credentials or provision external services.
 They do not replace realistic Docker, SSH, or S3 acceptance when those workflows

@@ -1,13 +1,5 @@
 # Background jobs
 
-For [delegated tasks](../concepts/authorization.md#create-bind-and-close-a-task),
-job ownership and idempotency keys belong to the submitting access scope. A caller
-sees only its own subtree. Own jobs require current use grants; descendant jobs
-allow current use or delegation grants for every underlying operation. Delegation
-therefore permits supervision (including logs/results and cancellation), not direct use.
-Closing a scope blocks its future submissions and result access, not work already
-admitted; an authorized ancestor can inspect or cancel descendant jobs separately.
-
 Execution, data writes, deletion, and copy can run as durable
 background jobs. The operation itself remains in its ordinary CLI command or
 MCP tool; the `jobs` namespace is only for lifecycle management. Jobs belong to
@@ -48,6 +40,16 @@ MCP returns a next byte offset for polling. CLI prints the raw page bytes; advan
 For a `lost` job, logs may still grow: the log page's `complete` flag describes
 the current terminal-record/end-of-file observation, not proof that a lost or
 detached writer has stopped.
+
+## Supervising delegated work
+
+For [delegated tasks](../guides/delegation.md),
+job ownership and idempotency keys belong to the submitting access scope. A caller
+sees only its own subtree. Own jobs require current use grants; descendant jobs
+allow current use or delegation grants for every underlying operation. Delegation
+therefore permits supervision (including logs/results and cancellation), not direct use.
+Closing a scope blocks its future submissions and result access, not work already
+admitted; an authorized ancestor can inspect or cancel descendant jobs separately.
 
 ## Status and configuration
 
@@ -185,9 +187,10 @@ code-upgrade step.
 
 ## Authorization
 
-The job inherits every underlying resource operation grant. Copy has both a
-source and destination scope. Current policy must still allow all scopes to
-list, inspect, read logs, or cancel that job.
+A job records its underlying resource operation grants. Copy has both a source
+and destination scope. Own-job access requires current use grants; descendant
+supervision accepts current use or delegation grants for every recorded operation.
+See [supervising delegated work](#supervising-delegated-work).
 
 Writes have kind `write` and a `data.write` scope for either addressing model.
 Copy records source `data.read` and destination `data.write`. Job formats are

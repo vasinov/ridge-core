@@ -6,6 +6,10 @@ The Python package remains `ridge` even though the distribution is named
 For inventory validation without application/state initialization, use the
 [configuration validation CLI](configuration.md#validate-an-inventory).
 
+Agent hosts use `RidgeService` for workspace access, delegated tasks, and
+supervision. Start with the [runnable process handoff](examples/delegation.md)
+for a complete parent/child lifecycle.
+
 Application code should begin with `RidgeService`:
 
 ```python
@@ -82,7 +86,7 @@ reload configuration and recheck lifecycle for each request. Python binding is
 explicit: `from_config()` does not read `RIDGE_SCOPE_TOKEN`; CLI/MCP entry points
 own environment/file transport. `None` deliberately selects operator mode in trusted
 Python code; empty or invalid strings fail closed.
-See [task access](concepts/authorization.md#create-bind-and-close-a-task) for
+See [task access](guides/delegation.md) for
 attenuation, expiry, visibility, and the distinction from lock sessions.
 
 `AccessGrant(..., data_root="outputs/task-a")` narrows data access relative to the

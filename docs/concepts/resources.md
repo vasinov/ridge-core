@@ -2,7 +2,9 @@
 
 A resource is a configured identity such as `local`, `build`, or `artifacts`.
 Its provider composes one or more capability implementations behind that
-identity.
+identity. Agents delegate views of these existing resources, not duplicate
+inventories: the name stays the same while allowed operations and data roots
+can differ by task. See [delegating work](../guides/delegation.md).
 
 Resources select a `provider` (`local`, `docker`, `ssh`, `s3`, or an installed
 provider). Callers use `compute.exec` and `data.list/read/write/stat/delete`, not

@@ -1,60 +1,62 @@
-# Ridge
+# Ridge — a resource mesh for AI agents
 
-Give your AI agents one way to work with local files, Docker containers, SSH
-hosts, and S3. Ridge exposes named resources through a CLI and a local MCP
-server: discover what is available, move data, run programs, and retrieve results.
+Give your agent resources. Let it build the team.
 
-Configure a [workspace](configuration.md#workspace): a named resource inventory,
-permission policy, and managed job/coordination state shared by participating agents.
-Its resources can span machines and services; no new directory layout is required.
+Ridge connects agents to resources such as local projects, remote compute,
+containers, and cloud storage. A main agent can delegate tailored access to
+subagents, coordinate shared work, and bring back results—all within permissions
+you establish.
 
-## Start with a task
+## From a request to delegated work
 
-> Run the sales analysis from `inputs` on `worker`. Save the report in `reports`
-> and tell me the revenue by region.
+Consider an agent comparing two approaches to a data-analysis problem. The code
+lives locally, the dataset is in cloud storage, and two remote workers are ready
+to run the evaluations.
 
-An agent discovers the resources and allowed operations, copies the inputs,
-runs the analysis, checks its exit code, and reads back the small report. It
-uses the same Ridge tools whether the worker is local, Docker, or SSH. File
-transfers stream through Ridge instead of passing through the conversation.
+> Compare these approaches. Have an agent evaluate each against the dataset,
+> save their results, and tell me which performs better.
 
-Follow the [agent walkthrough](examples/csv-report.md#with-an-agent), or run the
-same task yourself with the [local quickstart](getting-started.md). The
-[example recipes](examples/index.md) cover ML experiments, builds, scientific
-computing, and media processing.
+The main agent discovers available resources, derives a scope for each child,
+and has its harness launch the children with those bindings. Each child receives
+read access to the inputs, its own worker, and a separate results location.
+The parent follows their jobs, compares reports, and closes task access.
+
+The operator configures the initial authority—not every child task.
+[Delegating work](guides/delegation.md) explains the agent's workflow;
+the [runnable handoff](examples/delegation.md) demonstrates the process boundary
+without requiring a model account.
 
 ## Why Ridge?
 
-- **Reuse one workflow across backends.** Named resources and explicit operations
-  replace per-task transfer glue and backend-specific addressing.
-- **Move artifacts outside model context.** Copies relay bytes with bounded
-  payload memory; agents receive metadata and choose what to read back.
-- **Coordinate cooperating agents.** Resource locks reject conflicting calls;
-  multi-resource sessions protect a sequence such as copy, run, and retrieve.
-- **Discover access before acting.** Inspect both supported operations and
-  exact operation grants through the same interface.
-- **Reconnect to work.** Background execution, writes, and copies return durable
-  job IDs for later inspection and bounded log reads.
+- **Delegate access, not just instructions.** Select resources, operations, and
+  narrower data locations for each task, with optional further delegation.
+- **Bring different resources into one workflow.** Named resources keep backend
+  mechanics out of the agent's task logic.
+- **Keep artifacts out of model context.** Stream inputs and results; read back
+  what matters.
+- **Coordinate shared work.** Reject conflicting operations and reserve resources
+  across multi-step tasks. Independent S3 objects can be accessed concurrently.
+- **Pick up work later.** Durable background jobs support reconnect, inspection,
+  logs, and parent supervision.
+- **Keep control as work evolves.** Expire or revoke task access, and cancel
+  running work separately when needed.
 
-Coordination requires callers to share local state and matching resource lock
-keys. Managed Python/MCP caller sessions can renew reservations across long calls
-and model reasoning; direct access outside Ridge is not protected. See
-[coordination and host integration](guides/coordination.md).
+## Define a workspace. Connect an agent.
 
-## Connect your resources
+A **workspace defines your resource mesh**: the resources agents can access, the
+permissions they can delegate, and the shared state that coordinates their work.
+It is configured in YAML, not a separate service or mandatory directory layout.
 
-Start with [Configuration](configuration.md) and the resource guides for
-[local](resources/local.md), [Docker](resources/docker.md),
-[SSH](resources/ssh.md), and [S3](resources/s3.md). Installed Python packages can
-add [providers](providers.md). Filesystem and object addressing retain their own
-semantics behind the shared operations.
+- [Configure resources and policy](configuration.md), with agent-assisted setup.
+- [Connect your agent](integrations.md) through MCP, CLI, or Python.
+- [Delegate work](guides/delegation.md) within the workspace's authority.
+- [Supervise background jobs](guides/jobs.md) and [coordinate shared resources](guides/coordination.md).
 
-Use the [CLI](cli.md) directly, connect an agent through [MCP](mcp.md), or embed
-the [Python API](python-api.md). The frontends share application authorization,
-copy semantics, jobs, and coordination.
+For a first local run, the [quickstart](getting-started.md) includes everything
+needed for a small analysis. The [examples](examples/index.md) extend the same
+operations to delegated tasks, builds, science, and media processing.
 
-Ridge is public-alpha software for one trusted operator with cooperating agents.
-It uses the operator's existing OS and service access. Read the
-[security model](security.md) when choosing resources and grants, and the
-[copy](guides/copying.md) and [job](guides/jobs.md) guides for publication,
-recovery, and cancellation behavior.
+Ridge manages participating resource calls; the harness owns agent spawning and
+dispatch. See the [security model](security.md) for the operating boundary,
+[resource guides](resources/local.md) for backend behavior, and
+[provider API](providers.md) for extensions.

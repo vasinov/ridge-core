@@ -20,7 +20,7 @@ filesystem operations.
 Data [deletion](../concepts/resources.md#deletion) uses the same helper and supports
 foreground and background attempts; cancellation does not prove remote work stopped.
 
-Delegated [`data_root` views](../concepts/authorization.md#narrow-data-views) are
+Delegated [`data_root` views](../guides/delegation.md#narrow-data-views) are
 checked on the remote host when used, including every inherited directory boundary.
 Scope creation does not connect or create directories; compute stays resource-wide.
 

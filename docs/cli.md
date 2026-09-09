@@ -46,7 +46,7 @@ for the output contract, trusted-provider boundary, and sensitive diagnostics.
 Bind a task at startup with `RIDGE_SCOPE_TOKEN` or global `--scope-token-file PATH`
 (the explicit file wins). Scope handles are distinct from lock tokens. Scope
 creation returns its bearer handle once; subsequent inspection omits it.
-See [task delegation](concepts/authorization.md#create-bind-and-close-a-task) for
+See [task delegation](guides/delegation.md) for
 structured grants, expiry, reconnect, and revocation.
 
 Each grant accepts optional `"data_root":"outputs/task-a"`, relative to the

@@ -57,7 +57,7 @@ remain until active operations finish. Idle sessions are reclaimed on subsequent
 requests without a daemon. Release using the token remains possible after grants
 change. Tokens are returned only at acquisition and stored as hashes.
 
-When using [task access](../concepts/authorization.md#create-bind-and-close-a-task),
+When using [task access](../guides/delegation.md),
 sessions and operations belong to the bound scope. Only that scope can use or
 renew its session token; it does not transfer authority to another child. Scoped
 inspection/listing shows only the caller's subtree and still checks operation

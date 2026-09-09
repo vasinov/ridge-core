@@ -1,5 +1,5 @@
 site_name: Ridge
-site_description: Named resources and explicit capabilities for AI agents
+site_description: A resource mesh for AI agents — delegate access, coordinate work, retrieve results
 site_url: https://vasinov.github.io/ridge-core/
 repo_url: https://github.com/vasinov/ridge-core
 repo_name: vasinov/ridge-core
@@ -36,11 +36,14 @@ markdown_extensions:
 
 nav:
   - Overview: index.md
-  - Getting started: getting-started.md
+  - First local workflow: getting-started.md
+  - Configuration: configuration.md
+  - Integrations: integrations.md
+  - Delegating work: guides/delegation.md
   - Examples:
       - Overview: examples/index.md
+      - Delegated task handoff: examples/delegation.md
       - Sales report: examples/csv-report.md
-  - Configuration: configuration.md
   - Frontends:
       - CLI: cli.md
       - MCP: mcp.md

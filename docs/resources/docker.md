@@ -19,7 +19,7 @@ The container does not need Ridge installed.
 Data [deletion](../concepts/resources.md#deletion) removes entries under the root,
 not the container, and supports foreground and background execution.
 
-Delegated [`data_root` views](../concepts/authorization.md#narrow-data-views) are
+Delegated [`data_root` views](../guides/delegation.md#narrow-data-views) are
 checked by the helper inside the container when used, including every inherited
 symlink boundary. Scope creation does not contact or modify the container.
 

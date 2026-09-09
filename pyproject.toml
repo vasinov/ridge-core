@@ -1,7 +1,7 @@
 [project]
 name = "ridge-core"
 version = "0.1.0"
-description = "A resource abstraction layer for AI agents"
+description = "A resource mesh for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"

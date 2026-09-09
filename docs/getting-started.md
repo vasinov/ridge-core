@@ -1,6 +1,9 @@
-# Getting started
+# First local workflow
 
-Discover three named resources, send an analysis to a worker, and read its report.
+Start with a small local task: send an analysis to a named worker and read its
+report. These are the same operations a delegated child uses; no cloud account or
+model subscription is needed. To start with parent/child access instead, run the
+[delegation example](examples/delegation.md).
 The same workflow can be driven from your terminal or by an
 [MCP-connected agent](examples/csv-report.md#with-an-agent).
 
@@ -92,6 +95,9 @@ require Python 3.11 or newer.
 See [Development](development.md) for verification and external-test prerequisites.
 
 ## Next steps
+
+- Let an agent [delegate task access](guides/delegation.md) within this workspace;
+  enable the intended delegation grants first.
 
 - Continue with the [Docker worker and without-Ridge comparison](examples/csv-report.md).
 - Explore [other examples](examples/index.md) for ML, builds, science, and media.

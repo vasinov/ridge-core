@@ -2,6 +2,11 @@
 
 ## Overview
 
+Ridge is a resource mesh for AI agents: agents derive tailored access for child
+tasks and coordinate work across named resources. A workspace is the concrete
+configuration, policy, and managed state defining that mesh; there is no separate
+mesh runtime object. The harness owns agent spawning and dispatch.
+
 Ridge maps a configured resource identity and explicit operation to a composed
 capability implementation. Local, Docker, SSH, and S3 exercise those semantics
 across process, container, network, filesystem, and object-storage boundaries.
@@ -57,7 +62,7 @@ the same authoritative configuration; resources may span multiple backends.
 - Expected user, configuration, backend, and boundary failures are stable Ridge
   errors rather than backend exceptions where practical.
 
-## Decisions
+## Configuration and runtime contracts
 
 - Ridge serves one trusted operator with multiple cooperating agents. The
   [security model](security.md) owns ambient-authority and sensitive-state guidance.
@@ -72,6 +77,9 @@ the same authoritative configuration; resources may span multiple backends.
   resource operations, or Ridge state initialization. Provider imports/construction
   remain trusted code; validation is not a connectivity or safety audit. The
   [configuration reference](configuration.md#validate-an-inventory) owns its output.
+
+### Data and execution
+
 - Reads and writes are binary-safe. Frontends decide how to encode or bound
   content for their transport. Built-in bounded reads request at most the limit
   plus one detection byte from their streams and reject overflow, independently
@@ -90,6 +98,9 @@ the same authoritative configuration; resources may span multiple backends.
   explicit timeout. Selected mutating operations may instead be submitted to
   the durable local job supervisor. Ridge still has no interactive execution
   sessions.
+
+### Remote mechanisms
+
 - A Docker resource refers to an existing running container. Ridge never
   creates, starts, stops, or removes that container.
 - Docker execution and filesystem operations use bundled helper source through
@@ -117,6 +128,9 @@ the same authoritative configuration; resources may span multiple backends.
   Python helpers under `backends/_scripts` are packaged and loaded as
   source; the shared deletion mechanism is also imported locally. They use only the standard library and
   run through the configured target Python; targets do not need Ridge installed.
+
+### Transfer and publication
+
 - Cross-resource copy is a coordinator operation over two resource locations,
   not a capability attributed to either endpoint. Files stream as raw bytes;
   directory trees use an uncompressed tar stream. The standard library owns
@@ -156,6 +170,9 @@ the same authoritative configuration; resources may span multiple backends.
   verify the source snapshot; tree members use snapshotted sizes. Connection
   timeouts still apply, and cancellation follows the acknowledged-cleanup rules
   above. MCP bounds model-facing results rather than changing copy semantics.
+
+### Packaging and storage
+
 - The product, import package, and CLI are named `Ridge` and `ridge`. The Python
   distribution is named `ridge-core` because the `ridge` distribution name is
   already occupied.
@@ -189,6 +206,9 @@ the same authoritative configuration; resources may span multiple backends.
 - Object keys are relative to the resource's configured prefix but are not
   normalized as POSIX paths. Storage listing is flat, recursive by prefix, and
   explicitly paginated with opaque continuation tokens.
+
+### Frontends
+
 - MCP is a local stdio frontend with a separate `ridge-mcp` entry point. It uses
   the existing YAML inventory and ambient process authority; Ridge does not add
   an MCP-specific configuration or authorization domain.
@@ -213,6 +233,9 @@ the same authoritative configuration; resources may span multiple backends.
   retain filesystem/object metadata. Direct reads/writes buffer content;
   foreground and background copy stream payloads through Ridge, outside model
   context, with destination staging rather than server-to-server transfer.
+
+### Provider extension
+
 - A resource exposes a typed `ResourceCapabilities` collection. Registry
   inspection derives supported operations from that collection, and the
   application resolves capability implementations through it. Backends may use
@@ -245,7 +268,7 @@ the same authoritative configuration; resources may span multiple backends.
 
 ## Authorization
 
-The [task access contract](concepts/authorization.md#delegated-task-access-design)
+The [task access contract](guides/delegation.md)
 owns operator and scope-bound workflows, including rooted data views. Lock
 footprints describe interference independently of that authority.
 
@@ -354,12 +377,11 @@ source is unchanged since submission. Background execution does not accept
 explicit environment values to avoid intentionally persisting environment secrets.
 Arguments, payloads, and logs can nevertheless contain sensitive content.
 
-Job access inherits the operations recorded in its authorization scopes rather
-than adding a second job policy vocabulary. A job is listed, inspected, logged,
-or cancelled only when the current policy allows every underlying scope. A copy
-therefore requires both its source and destination grants. This keeps the policy
-exact but intentionally cannot distinguish permission to perform an
-operation from permission to observe its job metadata.
+Job access uses the operations recorded in its authorization scopes rather than
+adding a second job policy vocabulary. Own jobs require current use grants for
+every underlying scope; descendant supervision accepts use or delegation grants,
+as described under Authorization. A copy therefore requires both its source and
+destination grants. Delegation-only supervision does not authorize direct resource use.
 
 Job discovery returns bounded summary pages (default 50, maximum 200), ordered
 by immutable submission timestamp and ID descending. The manager scans indexed
@@ -436,7 +458,7 @@ modes; malformed plans fail before admission. Plans over 64 claims, 32 scope
 components or 16 KiB encoded scope collapse to whole-domain claims at the strongest
 requested mode. These are planning bounds, not a universal resource hierarchy.
 
-Accepted initial narrowing covers exact S3 data read/stat/write/delete and copy
+Narrowing covers exact S3 data read/stat/write/delete and copy
 endpoints. S3 maps full keys to single opaque components, preserving literal key
 text and inherited prefixes; same-bucket aliases share coordinates. Listing,
 compute, filesystem operations and incompatible alias groups stay broad. Sessions

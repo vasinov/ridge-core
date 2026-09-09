@@ -1,10 +1,13 @@
 # A sales report across resources
 
+A single agent—or a child with delegated access—can move an analysis between
+named resources and bring back a report. This walkthrough focuses on that task
+body; [delegated handoff](delegation.md) shows how a parent assigns access first.
+
 > Run the sales analysis from `inputs` on `worker`. Save the report in `reports`
 > and tell me the revenue by region.
 
-Ridge gives an agent the discovery, transfer, execution, and result-reading tools
-to carry out this request. Assume `inputs` contains `sales.csv` and `analyze.py`,
+For this request, assume `inputs` contains `sales.csv` and `analyze.py`,
 `worker` has Python 3.11+, and `reports` is writable. The
 [local setup](../getting-started.md) provides these resources and bundled files.
 
