@@ -88,4 +88,4 @@ newest first, with a default limit of 50 and maximum of 200. Pass `--cursor TOKE
 to continue. `jobs inspect` emits JSON including results and
 errors; a `succeeded` execution
 job can still have a nonzero `result.exit_code`. See [Background jobs](guides/jobs.md)
-for log paging, retention, configuration-change rejection, and cancellation limits.
+for log paging, retention, semantic configuration checks, and cancellation limits.

@@ -87,7 +87,7 @@ def test_copy_job_visibility_requires_both_data_scopes(tmp_path: Path) -> None:
         restricted = RidgeService(
             ResourceRegistry([LocalResource("local", tmp_path)]),
             AuthorizationPolicy.exact({"local": frozenset({grant})}),
-            JobManager(tmp_path / "job-state", tmp_path / "ridge.yaml", "observation-only"),
+            JobManager(tmp_path / "job-state", tmp_path / "ridge.yaml", {}),
         )
         assert restricted.list_jobs().jobs == ()
         with pytest.raises(AuthorizationDeniedError):
@@ -170,7 +170,7 @@ def test_idempotency_key_deduplicates_only_identical_requests(tmp_path: Path) ->
 def test_denied_background_write_does_not_create_job_state(tmp_path: Path) -> None:
     config = tmp_path / "ridge.yaml"
     config.write_text("resources: {data: {provider: local, root: .}}")
-    manager = JobManager(tmp_path / "jobs", config, "fixture")
+    manager = JobManager(tmp_path / "jobs", config, {})
     service = RidgeService(
         ResourceRegistry([LocalResource("data", tmp_path)]),
         AuthorizationPolicy.exact({"data": frozenset({Operation.DATA_READ})}),
@@ -190,12 +190,11 @@ def test_job_listing_is_filtered_by_current_underlying_grants(tmp_path: Path) ->
 
     loaded = load_configuration(tmp_path / "ridge.yaml")
     assert loaded.path is not None
-    assert loaded.fingerprint is not None
     assert loaded.state_directory is not None
     hidden = RidgeService(
         loaded.registry,
         AuthorizationPolicy.exact({"local": frozenset()}),
-        JobManager(loaded.state_directory, loaded.path, loaded.fingerprint),
+        JobManager(loaded.state_directory, loaded.path, loaded.resource_identities),
     )
 
     assert hidden.list_jobs().jobs == ()
@@ -205,10 +204,8 @@ def test_job_listing_is_filtered_by_current_underlying_grants(tmp_path: Path) ->
 
 def _unstarted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[JobManager, str]:
     config = _config(tmp_path)
-    import hashlib
-
     manager = JobManager(
-        tmp_path / "job-state", config, hashlib.sha256(config.read_bytes()).hexdigest()
+        tmp_path / "job-state", config, load_configuration(config).resource_identities
     )
 
     def no_spawn(*args: object, **kwargs: object) -> None:
@@ -252,7 +249,7 @@ def _run_worker(manager: JobManager, job_id: str) -> dict[str, object]:
     return json.loads((manager.directory / job_id / "outcome.json").read_text())
 
 
-def test_worker_executes_the_exact_configuration_bytes_it_fingerprinted(
+def test_worker_executes_the_single_configuration_document_it_checked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager, job_id = _unstarted(tmp_path, monkeypatch)
@@ -274,6 +271,120 @@ def test_worker_executes_the_exact_configuration_bytes_it_fingerprinted(
     assert reads == 1
     assert (tmp_path / "output").read_bytes() == b"staged"
     assert not (tmp_path / "replacement/output").exists()
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        (
+            "# harmless comment\nresources:\n  local: {root: ., provider: local}\n"
+            "state: {directory: ./job-state}\n"
+        ),
+        (
+            "resources: {local: {provider: local, root: .}, extra: {provider: local, root: .}}\n"
+            "state: {directory: job-state}\npermissions: {local: [data.write]}\n"
+        ),
+        (
+            "resources: {local: {provider: local, root: ., lock_key: local}}\n"
+            "state: {directory: job-state}\n"
+        ),
+    ],
+)
+def test_worker_accepts_irrelevant_configuration_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, edit: str
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    manager.config_path.write_text(edit)
+    outcome = _run_worker(manager, job_id)
+    assert outcome["status"] == "succeeded", outcome
+    assert (tmp_path / "output").read_bytes() == b"staged"
+
+
+@pytest.mark.parametrize(
+    "edit, message",
+    [
+        ("resources: {local: {provider: local, root: replacement}}", "resource 'local' changed"),
+        (
+            "resources: {local: {provider: local, root: ., lock_key: new}}",
+            "resource 'local' changed",
+        ),
+        ("resources: {}", "resource 'local' changed"),
+        ("resources: {local: {provider: unknown, root: .}}", "resource 'local' changed"),
+        ("resources: {local: {provider: local, root: .}}\npermissions: {}", "authorization denied"),
+    ],
+)
+def test_worker_rejects_changed_targets_and_removed_grants_before_effects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, edit: str, message: str
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    (tmp_path / "replacement").mkdir()
+    manager.config_path.write_text(edit + "\nstate: {directory: job-state}\n")
+    outcome = _run_worker(manager, job_id)
+    assert outcome["status"] == "failed"
+    assert message in str(outcome["error"])
+    assert not (tmp_path / "output").exists()
+    assert not (tmp_path / "replacement/output").exists()
+
+
+def test_worker_rejects_changed_state_before_initializing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager, job_id = _unstarted(tmp_path, monkeypatch)
+    manager.config_path.write_text(
+        manager.config_path.read_text().replace("directory: job-state", "directory: new-state")
+    )
+    outcome = _run_worker(manager, job_id)
+    assert outcome["status"] == "failed"
+    assert "state directory changed" in str(outcome["error"])
+    assert not (tmp_path / "new-state").exists()
+    assert not (tmp_path / "output").exists()
+
+
+def test_idempotency_ignores_unrelated_edits_but_not_target_changes(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    service = RidgeService.from_config(config)
+    first = service.submit_write("local", "output", b"first", idempotency_key="same")
+    assert _wait(service, first.id) is JobStatus.SUCCEEDED
+    config.write_text(
+        "resources: {extra: {provider: local, root: .}, local: {root: ., provider: local}}\n"
+        "state: {directory: job-state}\npermissions: {local: [data.read, data.write]}\n"
+    )
+    reconnected = RidgeService.from_config(config)
+    assert (
+        reconnected.submit_write("local", "output", b"first", idempotency_key="same").id == first.id
+    )
+    config.write_text(
+        config.read_text().replace("root: ., provider: local", "root: ./, provider: local")
+    )
+    with pytest.raises(JobConflictError):
+        RidgeService.from_config(config).submit_write(
+            "local", "output", b"first", idempotency_key="same"
+        )
+
+
+@pytest.mark.parametrize("endpoint", ["source", "destination"])
+def test_copy_worker_validates_both_resource_identities(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str
+) -> None:
+    for directory in ("source", "destination", "replacement"):
+        (tmp_path / directory).mkdir()
+    (tmp_path / "source/input").write_bytes(b"original")
+    config = tmp_path / "ridge.yaml"
+    config.write_text(
+        "resources:\n  source: {provider: local, root: source}\n"
+        "  destination: {provider: local, root: destination}\nstate: {directory: state}\n"
+    )
+    service = RidgeService.from_config(config)
+    with monkeypatch.context() as patch:
+        patch.setattr(runner.subprocess, "Popen", Mock())
+        job = service.submit_copy("source:input", "destination:output")
+    config.write_text(config.read_text().replace(f"root: {endpoint}", "root: replacement"))
+    outcome = _run_worker(service._job_manager(), job.id)
+    assert outcome["status"] == "failed"
+    assert f"resource '{endpoint}' changed after submission" in str(outcome["error"])
+    assert (tmp_path / "source/input").read_bytes() == b"original"
+    assert list((tmp_path / "destination").iterdir()) == []
+    assert list((tmp_path / "replacement").iterdir()) == []
 
 
 @pytest.mark.parametrize("cancelled", [False, True])

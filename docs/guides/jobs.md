@@ -50,11 +50,20 @@ reports a Ridge/provider failure (including an execution timeout); `lost` means
 the startup handoff expired, the supervisor disappeared, or local termination
 could not be verified. Inspect `error`; `lost` never proves work stopped.
 
-The worker reads the original configuration once and checks those exact bytes
-against the submission fingerprint before parsing or constructing providers.
-A mismatch rejects the attempt, even for a formatting-only edit. Execution uses
-that checked configuration and rechecks its underlying grants; later file edits
-do not replace it within the attempt. Credentials, installed provider code, and
+The worker reads the selected configuration once. Before discovering or constructing
+providers, it checks the job's referenced resource identities and resolved state
+directory against submission. Comments, formatting, mapping order, unrelated valid
+resource changes, and permission-list ordering do not invalidate a job. Any changed
+provider configuration on a referenced resource (including descriptive properties),
+provider name, or effective lock key rejects the attempt; removing a resource or
+changing the state directory does too. Provider defaults and equivalent path spellings
+are not normalized, so an explicit provider-option edit may conservatively reject
+the attempt even when it names the same target.
+
+Execution uses that checked document and rechecks the job's required grants.
+Removing an unrelated grant is harmless; removing a required grant denies execution.
+Adding grants does not change the submitted operation. Later file edits do not replace
+configuration within the running attempt. Credentials, installed provider code, and
 downstream data are not snapshotted. Background execution rejects explicitly
 supplied environment values; it still inherits ambient credentials and environment.
 

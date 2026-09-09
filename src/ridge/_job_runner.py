@@ -47,7 +47,7 @@ def _load_manager(directory: Path, job_id: str) -> tuple[JobManager, sqlite3.Row
     manager = JobManager(
         directory,
         Path(row["config_path"]),
-        row["config_fingerprint"],
+        json.loads(row["resource_identities_json"]),
     )
     return manager, row
 
@@ -83,7 +83,9 @@ def _work(directory: Path, job_id: str, gate: int) -> int:
         from ridge.config import load_configuration
 
         loaded = load_configuration(
-            manager.config_path, expected_fingerprint=manager.config_fingerprint
+            manager.config_path,
+            expected_resource_identities=manager.resource_identities,
+            expected_state_directory=manager.directory,
         )
         service = RidgeService._from_configuration(loaded)  # pyright: ignore[reportPrivateUsage]
         kind = JobKind(row["kind"])

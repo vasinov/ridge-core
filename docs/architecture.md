@@ -243,7 +243,7 @@ the same authoritative configuration; resources may span multiple backends.
 ## Authorization
 
 The [delegated task access design](concepts/authorization.md#delegated-task-access-design)
-records the accepted direction and remaining decisions separately from the current
+records the accepted contract separately from the current
 process-wide policy below. Delegation and granular lock footprints are not implemented.
 
 `authorization` owns policy decisions; `application` checks them before invoking
@@ -281,11 +281,17 @@ attempt. The supervisor atomically claims the row within 30 seconds while holdin
 a per-job advisory lock. Observers reconcile expired unclaimed submissions; late
 or duplicate supervisors cannot execute them. There is no recovery daemon or retry.
 A separate worker receives permission to run through an inherited pipe; EOF before
-handoff means no execution. The worker fingerprints a single read of the original
-configuration before parsing or provider construction, refuses changed bytes,
-and constructs its service from that same checked document. It rechecks the
-underlying operation grants before invoking a capability. Ambient credentials, provider
+handoff means no execution. From a single configuration read, the worker compares
+semantic identities for the submitted resource set and the resolved state directory
+before provider discovery/construction. Identities hash provider configuration,
+effective lock key, and configuration directory; they preserve scalar types and
+sequence order but ignore mapping order and YAML presentation. Unrelated resources
+and permissions are not identity inputs. The worker constructs its service from
+that same checked document and rechecks the underlying operation grants before
+invoking a capability. Ambient credentials, provider
 code, and downstream state can still change between submission and execution.
+Idempotency includes only the referenced identities, not the entire inventory or
+policy, so harmless edits do not turn an identical retry into a different request.
 
 Write content is snapshotted into the job directory before submission returns.
 Copy instead stores resource locations and opens the source when the attempt

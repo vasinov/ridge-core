@@ -134,6 +134,11 @@ explicit environment values so Ridge does not persist them.
 Arguments, logs, results, and staged content may still contain secrets supplied
 by callers or commands. See [job retention](guides/jobs.md#retention-and-sensitive-data).
 
+Background jobs tolerate comments, formatting, and unrelated valid configuration
+edits. Changes to a referenced resource's provider configuration or lock identity,
+or the workspace's state location, reject its pending attempt. Required grants are
+rechecked before execution. See [job configuration checks](guides/jobs.md#status-and-configuration).
+
 All configured operations participate in resource coordination. An optional
 resource `lock_key` defaults to its resource name and uses the same character set,
 with a maximum of 128 characters. Give overlapping resources the same key. Different

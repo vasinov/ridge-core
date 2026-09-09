@@ -22,13 +22,13 @@ from ridge.registry import ResourceRegistry
 
 
 def _history(tmp_path: Path, count: int = 405) -> tuple[JobManager, RidgeService]:
-    manager = JobManager(tmp_path / "state", tmp_path / "ridge.yaml", "test")
+    manager = JobManager(tmp_path / "state", tmp_path / "ridge.yaml", {})
     with manager.connect() as connection:
         for index in range(count):
             connection.execute(
                 "INSERT INTO jobs (id, kind, status, scopes_json, request_json, request_digest, "
-                "config_path, config_fingerprint, submitted_at, cancellation_requested, result_json) "
-                "VALUES (?, 'write', 'succeeded', ?, '{}', '', '', '', ?, 0, ?)",
+                "config_path, resource_identities_json, submitted_at, cancellation_requested, result_json) "
+                "VALUES (?, 'write', 'succeeded', ?, '{}', '', '', '{}', ?, 0, ?)",
                 (
                     str(uuid.UUID(int=index + 1)),
                     json.dumps(
@@ -115,7 +115,7 @@ def test_wrong_store_and_malformed_position(tmp_path: Path) -> None:
     _, service = _history(tmp_path, 201)
     token = service.list_jobs(limit=1).next_cursor
     assert token is not None
-    other = JobManager(tmp_path / "other", tmp_path / "ridge.yaml", "test")
+    other = JobManager(tmp_path / "other", tmp_path / "ridge.yaml", {})
     with pytest.raises(ValueError, match="invalid job cursor"):
         other.list(cursor=token, allowed=lambda _: True)
     position = json.loads(base64.b64decode(token))

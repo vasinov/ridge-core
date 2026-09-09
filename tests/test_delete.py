@@ -365,7 +365,7 @@ def test_remote_failure_preserves_uncertain_claim(tmp_path: Path) -> None:
     from ridge.jobs import JobManager
 
     service = RidgeService(
-        ResourceRegistry([resource]), jobs=JobManager(tmp_path / "state", config, "fixture")
+        ResourceRegistry([resource]), jobs=JobManager(tmp_path / "state", config, {})
     )
     with pytest.raises(ResourceUnavailableError):
         service.delete_data("local", "file")

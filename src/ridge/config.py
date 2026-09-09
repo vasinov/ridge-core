@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -25,9 +26,9 @@ class LoadedConfiguration:
     registry: ResourceRegistry
     authorization: AuthorizationPolicy
     path: Path | None = None
-    fingerprint: str | None = None
     state_directory: Path | None = None
     lock_keys: dict[str, str] = field(default_factory=lambda: dict[str, str]())
+    resource_identities: dict[str, str] = field(default_factory=lambda: dict[str, str]())
 
 
 def _mapping(value: object, label: str) -> Mapping[str, object]:
@@ -51,14 +52,12 @@ def load_configuration(
     config_path: str | Path,
     *,
     providers: ResourceProviderRegistry | None = None,
-    expected_fingerprint: str | None = None,
+    expected_resource_identities: Mapping[str, str] | None = None,
+    expected_state_directory: Path | None = None,
 ) -> LoadedConfiguration:
     path = Path(config_path).expanduser().resolve()
     try:
         raw_bytes = path.read_bytes()
-        fingerprint = sha256(raw_bytes).hexdigest()
-        if expected_fingerprint is not None and fingerprint != expected_fingerprint:
-            raise ConfigurationError("configuration changed after submission")
         raw_document: Any = yaml.safe_load(raw_bytes.decode("utf-8"))
     except FileNotFoundError as exc:
         raise ConfigurationError(f"configuration file does not exist: {path}") from exc
@@ -71,6 +70,21 @@ def load_configuration(
         joined = ", ".join(sorted(unknown_document_keys))
         raise ConfigurationError(f"unknown configuration keys: {joined}")
     resource_configs = _mapping(document.get("resources"), "resources")
+    state_directory = _load_state(document.get("state"), path)
+    if (
+        expected_state_directory is not None
+        and state_directory != expected_state_directory.resolve()
+    ):
+        raise ConfigurationError("workspace state directory changed after submission")
+    resource_identities = {
+        name: _resource_identity(name, _mapping(value, f"resource {name!r}"), path)
+        for name, value in resource_configs.items()
+    }
+    if expected_resource_identities is not None:
+        for name, identity in expected_resource_identities.items():
+            if resource_identities.get(name) != identity:
+                raise ConfigurationError(f"resource {name!r} changed after submission")
+    # Identity checks precede discovery/construction of trusted provider code.
     provider_registry = providers or default_provider_registry()
     context = ProviderContext(config_path=path)
     resources: list[Resource] = []
@@ -112,20 +126,46 @@ def load_configuration(
         authorization = AuthorizationPolicy.unrestricted()
     else:
         authorization = _load_permissions(document["permissions"], registry)
-    state_directory = _load_state(document.get("state"), path)
     return LoadedConfiguration(
         registry,
         authorization,
         path,
-        fingerprint,
         state_directory,
         lock_keys,
+        resource_identities,
     )
+
+
+def _semantic_value(value: object) -> str:
+    """Canonicalize YAML values without conflating scalar types or mapping order."""
+    if isinstance(value, Mapping):
+        pairs = sorted(
+            (_semantic_value(key), _semantic_value(item))
+            for key, item in cast(Mapping[object, object], value).items()
+        )
+        return json.dumps(["mapping", pairs])
+    if isinstance(value, (list, tuple, set)):
+        container_type = (
+            "set" if isinstance(value, set) else "list" if isinstance(value, list) else "tuple"
+        )
+        items = [_semantic_value(item) for item in cast(list[object], value)]
+        return json.dumps([container_type, sorted(items) if container_type == "set" else items])
+    return json.dumps([type(value).__name__, str(value)])
+
+
+def _resource_identity(name: str, config: Mapping[str, object], path: Path) -> str:
+    identity = dict(config)
+    identity.setdefault("lock_key", name)
+    try:
+        encoded = _semantic_value([str(path.parent), identity])
+    except RecursionError as exc:
+        raise ConfigurationError(f"resource {name!r} contains recursive configuration") from exc
+    return sha256(encoded.encode()).hexdigest()
 
 
 def _load_state(value: object, config_path: Path) -> Path:
     if value is None:
-        return config_path.parent / ".ridge"
+        return (config_path.parent / ".ridge").resolve()
     config = _mapping(value, "state")
     unknown = set(config) - {"directory"}
     if unknown:

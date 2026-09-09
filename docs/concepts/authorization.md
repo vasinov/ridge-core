@@ -85,9 +85,10 @@ must identify the same target when the child addresses `report.csv`. Until granu
 coordination is implemented, both use the parent's whole-resource lock domain.
 Neither child names nor task IDs create independent locks or state directories.
 
-### Proposed first implementation — awaiting approval
+### Accepted first implementation
 
-The following choices need approval before runtime implementation:
+The following choices define the initial scope implementation. The scope API is
+still planned; resource-level configuration checks are already used by background jobs.
 
 - **Authority and binding:** persist scope records in the workspace's local state;
   bind each CLI/MCP client to one opaque scope handle at startup. Invalid, expired,
@@ -97,20 +98,28 @@ The following choices need approval before runtime implementation:
   before defining the wire API.
 - **Derivation:** start with subsets of named resources and exact operations,
   plus rooted data views where the provider can validate narrowing. Keep arbitrary
-  compute resource-wide. Recommend no redelegation by default; when permitted,
+  compute resource-wide. No redelegation by default; when permitted,
   every descendant must remain within its ancestors' current ceilings. Unsupported
   view types fail explicitly rather than silently broadening access.
 - **Lifetime:** optional absolute expiry, no connection heartbeat for permission
-  lifetime. Explicit task completion revokes its scope. Recommend ancestor revocation
+  lifetime. Explicit task completion revokes its scope. Ancestor revocation
   or expiry disables descendant admission too; reconnect never revives closed access.
-  Recommend closed scopes lose result access too; an authorized parent retains
+  Closed scopes lose result access too; an authorized parent retains
   access to task history. This is distinct from the renewable lock-session idle lease.
 - **Jobs and visibility:** attach scope lineage to submissions and filter resource
-  discovery, jobs, logs, and diagnostics by the bound scope. Recommend parents can
+  discovery, jobs, logs, and diagnostics by the bound scope. Parents can
   inspect/cancel descendant work, children see only their own subtree, and siblings
   do not see each other's metadata. Revocation blocks new work; admitted jobs keep
-  their recorded outcome/claims and require separate cancellation. Define handling
-  of policy/config changes between submission and worker execution before coding.
+  their recorded outcome/claims and require separate cancellation.
+- **Configuration changes:** comments, formatting, mapping order, and unrelated
+  resource edits do not invalidate scopes. Current policy can reduce their effective
+  authority but cannot expand their issued grants; wider access requires fresh
+  delegation. Changing a granted resource's provider configuration, provider name,
+  or coordination identity invalidates affected scopes and descendants. Treat all
+  provider-option edits conservatively as identity changes rather than guessing
+  semantic equivalence. Scope identity includes its workspace, not just a resource
+  name. Background jobs use the same resource-level semantic checks before execution;
+  already-running operations retain their admitted configuration.
 
 The reference scenario is a persistent Ridge host connecting a caller to a remote
 worker and separate input/result resources. A client can disconnect while an

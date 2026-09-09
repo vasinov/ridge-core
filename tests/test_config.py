@@ -1,4 +1,3 @@
-from hashlib import sha256
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -12,24 +11,25 @@ from ridge.errors import ConfigurationError
 from ridge.model import Operation
 
 
-def test_fingerprint_mismatch_precedes_parsing_and_provider_discovery(
+def test_identity_mismatch_precedes_provider_discovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = tmp_path / "ridge.yaml"
-    config.write_bytes(b"not even valid yaml: [")
+    config.write_text("resources: {data: {provider: local, root: .}}")
     discover = Mock(side_effect=AssertionError("provider code must not run"))
     monkeypatch.setattr("ridge.config.default_provider_registry", discover)
-    with pytest.raises(ConfigurationError, match="configuration changed after submission"):
-        load_configuration(config, expected_fingerprint=sha256(b"original").hexdigest())
+    with pytest.raises(ConfigurationError, match="resource 'data' changed after submission"):
+        load_configuration(config, expected_resource_identities={"data": "original"})
     discover.assert_not_called()
 
 
-def test_configuration_parses_only_fingerprinted_bytes(
+def test_configuration_constructs_only_semantically_checked_document(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = tmp_path / "ridge.yaml"
     original = b"resources: {original: {provider: local, root: .}}"
     config.write_bytes(original)
+    identities = load_configuration(config).resource_identities
     read_bytes = Path.read_bytes
     reads = 0
 
@@ -42,10 +42,54 @@ def test_configuration_parses_only_fingerprinted_bytes(
         return content
 
     monkeypatch.setattr(Path, "read_bytes", swap_after_read)
-    loaded = load_configuration(config, expected_fingerprint=sha256(original).hexdigest())
+    loaded = load_configuration(config, expected_resource_identities=identities)
     assert loaded.registry.names() == ("original",)
-    assert loaded.fingerprint == sha256(original).hexdigest()
+    assert loaded.resource_identities == identities
     assert reads == 1
+
+
+def test_resource_identity_ignores_mapping_order_and_yaml_presentation(tmp_path: Path) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text(
+        "resources: {data: {provider: local, root: ., properties: {a: 1, b: true}}}\n"
+        "permissions: {data: [data.read, data.write]}\n"
+    )
+    before = load_configuration(config)
+    config.write_text(
+        "# edited with different YAML presentation\n"
+        "permissions: {data: [data.write, data.read]}\n"
+        "resources:\n  data:\n    properties: {b: true, a: 1}\n    root: '.'\n    provider: local\n"
+    )
+    assert load_configuration(config).resource_identities == before.resource_identities
+    assert not (tmp_path / ".ridge").exists()
+
+
+@pytest.mark.parametrize("value", ["'1'", "true", "1.0"])
+def test_resource_identity_preserves_scalar_types(tmp_path: Path, value: str) -> None:
+    config = tmp_path / "ridge.yaml"
+    original = "resources: {data: {provider: local, properties: {value: 1}}}"
+    config.write_text(original)
+    before = load_configuration(config).resource_identities
+    config.write_text(original.replace("value: 1", f"value: {value}"))
+    assert load_configuration(config).resource_identities != before
+
+
+def test_recursive_provider_configuration_fails_cleanly(tmp_path: Path) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text("resources: {data: &recursive {provider: local, properties: *recursive}}")
+    with pytest.raises(ConfigurationError, match="recursive configuration"):
+        load_configuration(config)
+
+
+def test_default_and_explicit_state_resolve_identically(tmp_path: Path) -> None:
+    config = tmp_path / "ridge.yaml"
+    (tmp_path / "state").mkdir()
+    (tmp_path / ".ridge").symlink_to(tmp_path / "state", target_is_directory=True)
+    config.write_text("resources: {}")
+    implicit = load_configuration(config)
+    config.write_text("resources: {}\nstate: {directory: .ridge}")
+    explicit = load_configuration(config, expected_state_directory=implicit.state_directory)
+    assert explicit.state_directory == implicit.state_directory == tmp_path / "state"
 
 
 def test_portable_example_includes_shared_coordination_state(tmp_path: Path) -> None:
@@ -130,7 +174,7 @@ def test_state_directory_is_relative_to_configuration(tmp_path: Path) -> None:
     loaded = load_configuration(config)
 
     assert loaded.path == config.resolve()
-    assert loaded.fingerprint is not None
+    assert loaded.resource_identities.keys() == {"data"}
     assert loaded.state_directory == (tmp_path / "state" / "jobs").resolve()
 
 

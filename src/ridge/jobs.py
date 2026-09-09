@@ -47,13 +47,13 @@ class JobManager:
         self,
         directory: Path,
         config_path: Path,
-        config_fingerprint: str,
+        resource_identities: Mapping[str, str],
         *,
         lock_keys: Mapping[str, str] | None = None,
     ) -> None:
         self.directory = directory
         self.config_path = config_path
-        self.config_fingerprint = config_fingerprint
+        self.resource_identities = dict(resource_identities)
         self.database = directory / "state.sqlite3"
         self.coordination = Coordination(directory, lock_keys)
 
@@ -75,6 +75,9 @@ class JobManager:
         scopes_json = encode_json(
             [{"resource": scope.resource, "operation": scope.operation.value} for scope in scopes]
         )
+        identities_json = encode_json(
+            {scope.resource: self.resource_identities[scope.resource] for scope in scopes}
+        )
         request_digest = hashlib.sha256(
             encode_json(
                 {
@@ -82,7 +85,7 @@ class JobManager:
                     "scopes": json.loads(scopes_json),
                     "request": json.loads(request_json),
                     "payload_sha256": payload_digest,
-                    "config_fingerprint": self.config_fingerprint,
+                    "resource_identities": json.loads(identities_json),
                     "config_path": str(self.config_path),
                     "lock_token_hash": hashlib.sha256(lock_token.encode()).hexdigest()
                     if lock_token
@@ -127,7 +130,7 @@ class JobManager:
                     """
                     INSERT INTO jobs (
                         id, kind, status, scopes_json, request_json, request_digest,
-                        config_path, config_fingerprint, payload_path, idempotency_key,
+                        config_path, resource_identities_json, payload_path, idempotency_key,
                         submitted_at, cancellation_requested
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                     """,
@@ -139,7 +142,7 @@ class JobManager:
                         request_json,
                         request_digest,
                         str(self.config_path),
-                        self.config_fingerprint,
+                        identities_json,
                         payload_path,
                         idempotency_key,
                         submitted_at,
@@ -318,7 +321,7 @@ class JobManager:
                 request_json TEXT NOT NULL,
                 request_digest TEXT NOT NULL,
                 config_path TEXT NOT NULL,
-                config_fingerprint TEXT NOT NULL,
+                resource_identities_json TEXT NOT NULL,
                 payload_path TEXT,
                 idempotency_key TEXT UNIQUE,
                 submitted_at TEXT NOT NULL,

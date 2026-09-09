@@ -84,13 +84,16 @@ class RidgeService:
 
     @classmethod
     def _from_configuration(cls, loaded: LoadedConfiguration) -> RidgeService:
-        if loaded.path is None or loaded.fingerprint is None or loaded.state_directory is None:
+        if loaded.path is None or loaded.state_directory is None:
             return cls(loaded.registry, loaded.authorization)
         return cls(
             loaded.registry,
             loaded.authorization,
             JobManager(
-                loaded.state_directory, loaded.path, loaded.fingerprint, lock_keys=loaded.lock_keys
+                loaded.state_directory,
+                loaded.path,
+                loaded.resource_identities,
+                lock_keys=loaded.lock_keys,
             ),
         )
 
