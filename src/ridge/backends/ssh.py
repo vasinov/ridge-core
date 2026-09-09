@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 import shlex
 import subprocess
 from collections.abc import Mapping, Sequence
+from copy import copy
 from pathlib import Path, PurePosixPath
 
 from ridge.backends._helper import HelperOperations, HelperTransportResult
+from ridge.backends._scripts.roots import validate_root
 from ridge.backends._source import HELPER_SOURCE, TRANSFER_HELPER_SOURCE
 from ridge.backends._transfer import ProcessTransferOperations
 from ridge.errors import InvalidPathError, PathTypeError, ResourceUnavailableError
@@ -58,13 +61,25 @@ class SshResource:
         self.ssh_executable = ssh_executable
         self._configured_properties = dict(configured_properties or {})
         self._operations = HelperOperations(self)
+        self._data_roots: tuple[str, ...] = ()
         self._transfer = ProcessTransferOperations(self.name, self._transfer_command)
         self.capabilities = ResourceCapabilities(
             compute=self,
             filesystem=self,
             transfer=self,
             delete=self,
+            data_views=self,
         )
+
+    def validate_data_root(self, root: str) -> None:
+        validate_root(root)
+
+    def open_data_view(self, roots: tuple[str, ...]) -> ResourceCapabilities:
+        view = copy(self)
+        view._data_roots = roots
+        view._operations = HelperOperations(view)
+        view._transfer = ProcessTransferOperations(view.name, view._transfer_command)
+        return ResourceCapabilities(filesystem=view, transfer=view, delete=view)
 
     def _connection_arguments(self) -> tuple[str, ...]:
         arguments = [
@@ -92,7 +107,14 @@ class SshResource:
 
     def _transfer_command(self, operation: str) -> tuple[str, ...]:
         remote_command = shlex.join(
-            (self.python_executable, "-c", TRANSFER_HELPER_SOURCE, self.root, operation)
+            (
+                self.python_executable,
+                "-c",
+                TRANSFER_HELPER_SOURCE,
+                self.root,
+                operation,
+                *((json.dumps(self._data_roots),) if self._data_roots else ()),
+            )
         )
         return (*self._connection_arguments(), remote_command)
 
@@ -146,7 +168,14 @@ class SshResource:
         timeout_seconds: float | None,
     ) -> HelperTransportResult:
         remote_command = shlex.join(
-            (self.python_executable, "-c", HELPER_SOURCE, self.root, operation)
+            (
+                self.python_executable,
+                "-c",
+                HELPER_SOURCE,
+                self.root,
+                operation,
+                *((json.dumps(self._data_roots),) if self._data_roots else ()),
+            )
         )
         completed = self._ssh(
             remote_command,

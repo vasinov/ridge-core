@@ -24,7 +24,9 @@ remote account. S3 uses Boto3's ambient credential chain.
 ## Filesystem boundaries
 
 Built-in filesystem operations reject absolute paths and paths that resolve
-outside their configured root, including symbolic-link escapes. Contained paths
+outside their effective root, including symbolic-link escapes. Delegated data
+views validate each inherited root boundary when used; compute is not narrowed.
+Contained paths
 such as `nested/../file` are accepted. Tree copy rejects
 absolute, broken, escaping, and top-level links plus hard links and special
 files. Deletion instead resolves parents and unlinks the final symbolic link,

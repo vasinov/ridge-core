@@ -60,6 +60,16 @@ advertises `data.delete`. Implement `DeleteCapability.delete(path, recursive=Fal
 returning `DeleteResult`, following [deletion semantics](concepts/resources.md#deletion).
 Do not advertise deletion merely because existing write methods replace entries.
 
+Optional `data_views=implementation` implements `DataViewCapability`:
+`validate_data_root(root)` performs pure, nonconnecting syntax validation;
+`open_data_view(roots)` returns narrowed data capabilities, preserving their addressing
+and operation support. `roots` is the ordered chain of parent-relative boundaries.
+Validate every physical boundary at use time, not just the final path. Ridge calls
+this method lazily under the operation claim, including copy and admitted jobs.
+Do not create directories as part of view resolution. Returned listings/metadata
+use view-relative coordinates. Scope creation rejects narrowing when this capability
+is absent. Compute, registry names, managed state and canonical claims are not rebased.
+
 `ridge.conformance` contains reusable destructive checks for compute,
 filesystem, storage, deletion, and single-file transfer implementations. Run them only
 against disposable roots, prefixes, or test resources.

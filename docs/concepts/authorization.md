@@ -57,8 +57,8 @@ enforces the restriction.
 
 ## Delegated task access design
 
-CLI, MCP, and Python support durable task scopes over whole named resources.
-Narrower data roots remain planned: unsupported grant fields are rejected, never
+CLI, MCP, and Python support durable task scopes over named resources, optionally
+with provider-validated narrower data roots. Unsupported views are rejected, never
 silently treated as whole-resource access. Lock tokens establish reservation
 ownership, not delegation.
 
@@ -111,11 +111,38 @@ cancel admitted jobs or release outstanding resource reservations.
 
 Scoped discovery exposes only granted resource names. Scope and job history is
 subtree-only; siblings and operator-owned jobs remain hidden. Job observation
-currently also requires the underlying use grants. Idempotency keys are local to
+requires current use grants for one's own jobs. For descendant jobs, current use
+or delegation grants authorize inspection, logs/results, and cancellation; a
+delegate-only parent does not gain direct resource use. Idempotency keys are local to
 the submitting scope, so two children can use the same key independently.
 Scoped lock tokens can be used or renewed only by their owning scope. Parents
 can inspect descendant claims; operator recovery remains available. `config validate`
 is an operator workflow; scoped callers use `access inspect` instead.
+
+### Narrow data views
+
+Add `"data_root":"outputs/task-a"` to a resource grant to address only that data
+view. It is relative to the issuing parent's view; omission inherits that view,
+not the original resource root. `access inspect` reports both the issued
+`data_root` and effective `data_root_chain`. Names, state, and canonical locks
+remain unchanged. A grant's data view applies to both use and further delegation.
+
+Local, Docker, and SSH validate relative root syntax at creation (no absolute
+paths or `..` components). On every data operation, each inherited directory must
+exist, be a directory, and resolve within its parent view, including symlinks.
+These checks run under the whole-resource operation claim; creation never contacts
+the remote backend or creates a directory. Missing roots can be prepared separately
+by an authorized parent. Data paths and returned listings are relative to the final
+view. Copy and background data jobs use that same view; deletion cannot remove its root.
+
+For S3, `data_root` is a nonempty relative prefix without leading/trailing `/` or
+NUL. It appends to the parent's prefix with a `/` separator, matching configured
+S3 prefix semantics. Interior slashes and `..` remain literal key text, not filesystem
+navigation. No directory-existence probe applies to object prefixes.
+
+`compute.exec` remains resource-wide, including its working directory; a data root
+does not narrow arbitrary execution. Omit compute grants for data-only tasks.
+Custom providers must explicitly support data views; otherwise narrowing fails.
 
 ### Accepted direction
 
@@ -143,8 +170,7 @@ Neither child names nor task IDs create independent locks or state directories.
 
 ### Accepted first implementation
 
-The following choices define the scope contract. Rooted views remain planned;
-whole-resource scopes and frontend/job/lock binding are implemented.
+The following choices define the implemented scope contract.
 
 - **Authority and binding:** persist scope records in the workspace's local state;
   bind each CLI/MCP client to one opaque scope handle at startup. Invalid, expired,
@@ -159,6 +185,9 @@ whole-resource scopes and frontend/job/lock binding are implemented.
   compute resource-wide. No redelegation by default; when permitted,
   every descendant must remain within its ancestors' current ceilings. Unsupported
   view types fail explicitly rather than silently broadening access.
+  Root issuance is nonconnecting: validate existence and physical containment
+  when the data view is used, under the operation's canonical resource lock.
+  Creating a scope does not create its narrowed directory.
 - **Lifetime:** optional absolute expiry, no connection heartbeat for permission
   lifetime. Explicit task completion revokes its scope. Ancestor revocation
   or expiry disables descendant admission too; reconnect never revives closed access.

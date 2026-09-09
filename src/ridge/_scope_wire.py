@@ -42,6 +42,7 @@ class GrantModel(BaseModel):
     resource: str
     operations: list[Operation] = Field(default_factory=lambda: list[Operation]())
     delegation: list[Operation] = Field(default_factory=lambda: list[Operation]())
+    data_root: str | None = None
 
     @field_validator("operations", "delegation")
     @classmethod
@@ -51,7 +52,9 @@ class GrantModel(BaseModel):
         return values
 
     def grant(self) -> AccessGrant:
-        return AccessGrant(self.resource, frozenset(self.operations), frozenset(self.delegation))
+        return AccessGrant(
+            self.resource, frozenset(self.operations), frozenset(self.delegation), self.data_root
+        )
 
 
 class ScopeModel(BaseModel):
@@ -72,6 +75,7 @@ class ScopeModel(BaseModel):
                     resource=g.resource,
                     operations=sorted(g.operations),
                     delegation=sorted(g.delegation),
+                    data_root=g.data_root,
                 )
                 for g in scope.grants
             ],
@@ -91,7 +95,11 @@ class ScopePageModel(BaseModel):
     next_cursor: str | None
 
 
+class EffectiveGrantModel(GrantModel):
+    data_root_chain: list[str]
+
+
 class AccessModel(BaseModel):
     scope_id: str | None
     mode: Literal["operator", "scope"]
-    resources: list[GrantModel]
+    resources: list[EffectiveGrantModel]

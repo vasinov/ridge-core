@@ -2,7 +2,9 @@
 
 For [delegated tasks](../concepts/authorization.md#create-bind-and-close-a-task),
 job ownership and idempotency keys belong to the submitting access scope. A caller
-sees only its own subtree and must retain the job's underlying operation grants.
+sees only its own subtree. Own jobs require current use grants; descendant jobs
+allow current use or delegation grants for every underlying operation. Delegation
+therefore permits supervision (including logs/results and cancellation), not direct use.
 Closing a scope blocks its future submissions and result access, not work already
 admitted; an authorized ancestor can inspect or cancel descendant jobs separately.
 
@@ -26,7 +28,7 @@ metadata and results under `state.directory`; per-job files store logs. Direct
 write content is staged before submission returns; terminal cleanup attempts to
 remove it. Copy sources are opened only when execution begins.
 Deletion likewise targets the path/key at execution time. Its `delete` job kind
-requires `data.delete` for submission and observation and records an `outcome`
+requires `data.delete` for submission (and use or delegation for descendant observation) and records an `outcome`
 result; see [deletion](../concepts/resources.md#deletion). Cancelling a delete
 does not restore removed entries, and remote work may continue after local shutdown.
 

@@ -291,6 +291,7 @@ class JobManager:
             owner=row["access_scope_id"] or None,
             require_owner=True,
             supervise=True,
+            allow_delegation=True,
         )
 
     def read_log(

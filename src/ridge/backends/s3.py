@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import copy
 from datetime import datetime
 from typing import Any, cast
 
@@ -224,7 +225,22 @@ class S3Resource:
         self._configured_properties = dict(configured_properties or {})
         self._client: Any = client
         self._delete_client: Any = client
-        self.capabilities = ResourceCapabilities(storage=self, transfer=self, delete=self)
+        self.capabilities = ResourceCapabilities(
+            storage=self, transfer=self, delete=self, data_views=self
+        )
+
+    def validate_data_root(self, root: str) -> None:
+        if not root or root.startswith("/") or root.endswith("/") or "\0" in root:
+            raise InvalidPathError(
+                "S3 data_root must be a nonempty prefix without leading/trailing '/' or NUL"
+            )
+
+    def open_data_view(self, roots: tuple[str, ...]) -> ResourceCapabilities:
+        view = copy(self)
+        for root in roots:
+            self.validate_data_root(root)
+            view.prefix = f"{view.prefix}/{root}" if view.prefix else root
+        return ResourceCapabilities(storage=view, transfer=view, delete=view)
 
     @property
     def client(self) -> Any:

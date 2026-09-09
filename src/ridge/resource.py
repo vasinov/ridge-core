@@ -115,6 +115,15 @@ class StorageCapability(Protocol):
     def stat_object(self, key: str) -> ObjectStat: ...
 
 
+@runtime_checkable
+class DataViewCapability(Protocol):
+    """Pure root validation and lazy, provider-owned narrowing of data capabilities."""
+
+    def validate_data_root(self, root: str) -> None: ...
+
+    def open_data_view(self, roots: tuple[str, ...]) -> ResourceCapabilities: ...
+
+
 def _validate_capability(name: str, implementation: object, contract: type[object]) -> None:
     if not isinstance(implementation, contract):
         raise TypeError(f"{name} capability does not implement its Ridge contract")
@@ -129,6 +138,7 @@ class ResourceCapabilities:
     storage: StorageCapability | None = None
     transfer: TransferCapability | None = None
     delete: DeleteCapability | None = None
+    data_views: DataViewCapability | None = None
 
     def __post_init__(self) -> None:
         if self.filesystem is not None and self.storage is not None:
@@ -137,12 +147,15 @@ class ResourceCapabilities:
             raise ValueError("transfer requires a data capability")
         if self.delete is not None and self.filesystem is None and self.storage is None:
             raise ValueError("delete requires a data capability")
+        if self.data_views is not None and self.filesystem is None and self.storage is None:
+            raise ValueError("data views require a data capability")
         contracts = (
             ("compute", self.compute, ComputeCapability),
             ("filesystem", self.filesystem, FilesystemCapability),
             ("storage", self.storage, StorageCapability),
             ("transfer", self.transfer, TransferCapability),
             ("delete", self.delete, DeleteCapability),
+            ("data_views", self.data_views, DataViewCapability),
         )
         for name, implementation, contract in contracts:
             if implementation is not None:

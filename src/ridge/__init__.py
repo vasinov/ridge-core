@@ -21,6 +21,7 @@ from ridge.provider import ProviderContext, ResourceProvider, ResourceProviderRe
 from ridge.registry import ResourceRegistry
 from ridge.resource import (
     ComputeCapability,
+    DataViewCapability,
     DeleteCapability,
     FilesystemCapability,
     Resource,
@@ -40,6 +41,7 @@ __all__ = [
     "AuthorizationRequest",
     "Authorizer",
     "ComputeCapability",
+    "DataViewCapability",
     "DeleteCapability",
     "DeleteResult",
     "FilesystemCapability",

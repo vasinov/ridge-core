@@ -52,8 +52,9 @@ shows the commands and provides bundled inputs.
   conflicting Ridge calls; sessions reserve resources across a multi-step task.
 - **Discover before acting.** Agents can inspect both supported operations and
   the operations your Ridge configuration allows.
-- **Delegate bounded tasks.** Derive child access to named resources without
-  rewriting inventories. Task handles reconnect, expire, or revoke independently
+- **Delegate bounded tasks.** Derive child access to named resources and narrower
+  data roots without rewriting inventories. Parents can supervise delegated jobs.
+  Task handles reconnect, expire, or revoke independently
   of lock ownership. See [delegation](https://vasinov.github.io/ridge-core/concepts/authorization/#create-bind-and-close-a-task).
 - **Pick up work later.** Background jobs provide durable IDs, results, and logs
   that another client can inspect after submission.

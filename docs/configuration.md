@@ -183,8 +183,8 @@ delegation:
 Here only `data.read` is delegable; `data.stat` is usable but not delegable.
 Configuration validation reports the effective intersection without creating state.
 The map is the operator ceiling for `scope create` and the equivalent MCP tool.
-Task handles bind whole-resource subsets without rewriting the inventory; narrower
-data roots remain planned. See [task delegation](concepts/authorization.md#delegated-task-access-design).
+Task handles bind resource subsets and optional narrower data roots without
+rewriting the inventory. See [task delegation](concepts/authorization.md#delegated-task-access-design).
 
 See the resource-specific pages for complete semantics:
 

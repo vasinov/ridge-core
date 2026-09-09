@@ -246,8 +246,8 @@ the same authoritative configuration; resources may span multiple backends.
 ## Authorization
 
 The [task access contract](concepts/authorization.md#delegated-task-access-design)
-owns operator and scope-bound workflows. Whole-resource scopes are implemented;
-rooted provider views and granular lock footprints remain separate work.
+owns operator and scope-bound workflows, including rooted data views. Granular
+lock footprints remain separate work.
 
 `authorization` owns policy decisions; `application` checks them before invoking
 capabilities through either frontend. Copy checks both endpoints before opening
@@ -291,13 +291,22 @@ resources. Parent identity checks include resources omitted by a descendant.
 Inspection/listing by active scopes is subtree-only; operator inspection retains
 closed history. Listings use bounded UUID-ordered pages, not snapshots. Internal
 limits are 100 resource grants, 32 scope levels, and 200 records per page. There is
-no retention/deletion API or provider-root narrowing yet.
+no scope retention/deletion API.
+
+`_views` binds lazy data capability adapters using immutable, parent-relative
+`data_root` chains. Providers own syntax validation and physical narrowing; the
+coordinator remains path-agnostic. Every data capability call resolves the complete
+chain within its admitted whole-resource claim. Compute remains the original
+capability. Job workers recover their admitted chain from immutable scope records
+without requiring a still-active scope or retaining bearer credentials.
 
 Jobs, sessions, and operations persist their issuing access-scope ID. Job insertion,
 scope checks, idempotency lookup, and resource admission serialize in one transaction;
 idempotency keys are partitioned by issuing scope. Operations cannot borrow another
 scope's session token. Visibility requires a live caller and its own subtree;
-closed descendants remain inspectable by authorized ancestors. No bearer handle
+closed descendants remain inspectable by authorized ancestors. Descendant job
+access accepts the caller's current use or delegation grants, whereas its own
+jobs require use. No bearer handle
 is persisted in a job or lock record. Revocation does not alter admitted jobs or
 settle their claims. Workers retain their admitted request and existing configuration
 and policy checks, independently of later task closure.

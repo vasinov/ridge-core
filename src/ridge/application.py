@@ -21,6 +21,7 @@ from ridge._access import (
     ScopePage,
     ScopeStore,
 )
+from ridge._views import bind_data_views
 from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Authorizer
 from ridge.config import LoadedConfiguration, load_configuration, read_configuration
 from ridge.coordination import Coordination
@@ -145,8 +146,9 @@ class RidgeService:
         request = RequestAccess(ScopeStore(loaded.state_directory), loaded, token)
         filtered = replace(
             loaded,
-            registry=ResourceRegistry(
-                loaded.registry.get(grant.resource) for grant in access.grants
+            registry=bind_data_views(
+                ResourceRegistry(loaded.registry.get(grant.resource) for grant in access.grants),
+                access.data_roots,
             ),
             authorization=AuthorizationPolicy.exact(
                 {grant.resource: grant.operations for grant in access.grants}
@@ -236,10 +238,12 @@ class RidgeService:
     def inspect_access(self) -> dict[str, object]:
         """Report effective use and delegation authority, without bearer handles."""
         loaded = self._scope_configuration()
+        roots: dict[str, tuple[str, ...]] = {}
         if self._access:
             with self._access.store.transaction() as connection:
                 access = self._access.check(connection)
             grants = access.grants
+            roots = access.data_roots
             identity = access.scope.id
         else:
             grants = tuple(
@@ -268,6 +272,8 @@ class RidgeService:
                     "resource": grant.resource,
                     "operations": sorted(op.value for op in grant.operations),
                     "delegation": sorted(op.value for op in grant.delegation),
+                    "data_root": grant.data_root,
+                    "data_root_chain": list(roots.get(grant.resource, ())),
                 }
                 for grant in grants
             ],
@@ -779,6 +785,9 @@ class RidgeService:
         return self._jobs
 
     def _job_allowed(self, job: Job | JobSummary) -> bool:
+        if self._access is not None:
+            # JobManager checks current use/delegation and strict lineage together.
+            return True
         return all(
             self._authorization.allows(scope.resource, scope.operation) for scope in job.scopes
         )

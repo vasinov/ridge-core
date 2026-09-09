@@ -13,7 +13,7 @@ import secrets
 import sqlite3
 import uuid
 from collections.abc import Generator, Sequence
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -54,10 +54,15 @@ class AccessGrant:
     resource: str
     operations: frozenset[Operation]
     delegation: frozenset[Operation] = frozenset()
+    data_root: str | None = None
 
     def __post_init__(self) -> None:
         if type(self.resource) is not str or not self.resource:
             raise ValueError("a grant requires a resource name")
+        if self.data_root is not None and (
+            type(self.data_root) is not str or not self.data_root or len(self.data_root) > 4096
+        ):
+            raise ValueError("data_root requires a nonempty string of at most 4096 characters")
         for name in ("operations", "delegation"):
             values = getattr(self, name)
             if not isinstance(values, frozenset) or any(
@@ -88,6 +93,9 @@ class ScopeAccess:
     scope: ScopeInfo
     lineage: tuple[str, ...]
     grants: tuple[AccessGrant, ...]
+    data_roots: dict[str, tuple[str, ...]] = field(
+        default_factory=lambda: dict[str, tuple[str, ...]]()
+    )
 
     def allows(self, resource: str, operation: Operation, *, delegate: bool = False) -> bool:
         return any(
@@ -116,6 +124,7 @@ def _grants_json(grants: Sequence[AccessGrant]) -> str:
                 "resource": grant.resource,
                 "operations": sorted(operation.value for operation in grant.operations),
                 "delegation": sorted(operation.value for operation in grant.delegation),
+                "data_root": grant.data_root,
             }
             for grant in sorted(grants, key=lambda grant: grant.resource)
         ],
@@ -129,6 +138,7 @@ def _read_grants(value: str) -> tuple[AccessGrant, ...]:
             grant["resource"],
             frozenset(Operation(operation) for operation in grant["operations"]),
             frozenset(Operation(operation) for operation in grant["delegation"]),
+            grant["data_root"],
         )
         for grant in json.loads(value)
     )
@@ -150,6 +160,7 @@ class RequestAccess:
         owner: str | None = None,
         require_owner: bool = False,
         supervise: bool = False,
+        allow_delegation: bool = False,
     ) -> ScopeAccess:
         access = self.store.resolve(self.loaded, self.token, connection=connection)
         if require_owner and (
@@ -160,7 +171,17 @@ class RequestAccess:
             )
         ):
             raise ScopeAccessError("unavailable")
-        if any(not access.allows(scope.resource, scope.operation) for scope in scopes):
+        if any(
+            not access.allows(scope.resource, scope.operation)
+            and not (
+                allow_delegation
+                and require_owner
+                and supervise
+                and owner != access.scope.id
+                and access.allows(scope.resource, scope.operation, delegate=True)
+            )
+            for scope in scopes
+        ):
             raise ScopeAccessError("operation_not_allowed")
         return access
 
@@ -322,11 +343,39 @@ class ScopeStore:
                 and all(operation in ancestor.get(grant.resource, ()) for ancestor in ceilings)
             )
             effective.append(
-                AccessGrant(grant.resource, grant.operations & ceiling, grant.delegation & ceiling)
+                AccessGrant(
+                    grant.resource,
+                    grant.operations & ceiling,
+                    grant.delegation & ceiling,
+                    grant.data_root,
+                )
             )
         return ScopeAccess(
-            self._info(row, "active"), tuple(parent["id"] for parent in rows), tuple(effective)
+            self._info(row, "active"),
+            tuple(parent["id"] for parent in rows),
+            tuple(effective),
+            self._root_chains(rows),
         )
+
+    @staticmethod
+    def _root_chains(rows: Sequence[sqlite3.Row]) -> dict[str, tuple[str, ...]]:
+        return {
+            grant.resource: tuple(
+                ancestor.data_root
+                for row in rows
+                for ancestor in _read_grants(row["grants_json"])
+                if ancestor.resource == grant.resource and ancestor.data_root is not None
+            )
+            for grant in _read_grants(rows[-1]["grants_json"])
+        }
+
+    def job_roots(self, loaded: LoadedConfiguration, identity: str) -> dict[str, tuple[str, ...]]:
+        """Immutable admitted-job view; closure does not retract admitted execution."""
+        with closing(self.connect()) as connection:
+            rows = self._lineage(
+                connection, self._row(connection, identity), self._workspace(loaded)
+            )
+            return self._root_chains(rows)
 
     def _active_rows(
         self,
@@ -402,6 +451,16 @@ class ScopeStore:
             if expires_at.tzinfo is None or expires_at.utcoffset() is None:
                 raise ValueError("expires_at requires an absolute timezone-aware datetime")
             expires_at = expires_at.astimezone(UTC)
+        if any(grant.data_root is not None for grant in grants):
+            preflight = self.resolve(loaded, actor_token) if actor_token is not None else None
+            self._check_delegation(loaded, grants, preflight)
+            # Even pure provider validation runs outside the authority transaction.
+            for grant in grants:
+                if grant.data_root is not None:
+                    views = loaded.registry.get(grant.resource).capabilities.data_views
+                    if views is None:
+                        raise ScopeAccessError("unsupported_data_view")
+                    views.validate_data_root(grant.data_root)
         with self.transaction() as connection:
             now = datetime.now(UTC)
             parent = (
@@ -419,19 +478,7 @@ class ScopeStore:
                         raise ScopeAccessError("expiry_exceeds_parent")
             if expires_at is not None and expires_at <= now:
                 raise ValueError("expires_at must be in the future")
-            for grant in grants:
-                if grant.resource not in loaded.resource_identities:
-                    raise ScopeAccessError("not_delegable")
-                for operation in grant.operations | grant.delegation:
-                    if (
-                        not loaded.authorization.allows(grant.resource, operation)
-                        or not loaded.delegation.allows(grant.resource, operation)
-                        or (
-                            parent is not None
-                            and not parent.allows(grant.resource, operation, delegate=True)
-                        )
-                    ):
-                        raise ScopeAccessError("not_delegable")
+            self._check_delegation(loaded, grants, parent)
             token = secrets.token_urlsafe(32)
             identity = str(uuid.uuid4())
             connection.execute(
@@ -454,6 +501,24 @@ class ScopeStore:
                 ),
             )
             return IssuedScope(self._info(self._row(connection, identity), "active"), token)
+
+    @staticmethod
+    def _check_delegation(
+        loaded: LoadedConfiguration, grants: Sequence[AccessGrant], parent: ScopeAccess | None
+    ) -> None:
+        for grant in grants:
+            if grant.resource not in loaded.resource_identities:
+                raise ScopeAccessError("not_delegable")
+            for operation in grant.operations | grant.delegation:
+                if (
+                    not loaded.authorization.allows(grant.resource, operation)
+                    or not loaded.delegation.allows(grant.resource, operation)
+                    or (
+                        parent is not None
+                        and not parent.allows(grant.resource, operation, delegate=True)
+                    )
+                ):
+                    raise ScopeAccessError("not_delegable")
 
     def _visible(
         self,

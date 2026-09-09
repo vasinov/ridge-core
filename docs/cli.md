@@ -49,6 +49,9 @@ creation returns its bearer handle once; subsequent inspection omits it.
 See [task delegation](concepts/authorization.md#create-bind-and-close-a-task) for
 structured grants, expiry, reconnect, and revocation.
 
+Each grant accepts optional `"data_root":"outputs/task-a"`, relative to the
+parent's data view. `access inspect` includes the effective `data_root_chain`.
+
 Configured resource operations automatically claim their resources and exit 2 on
 contention. `locks acquire` returns JSON including a session `id` and secret `token`.
 Put the global `--lock-token TOKEN` before the operation command, or set

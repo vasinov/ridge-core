@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Never
 # At runtime deletion is prepended to this script for the remote interpreter.
 if TYPE_CHECKING:
     from ridge.backends._scripts.deletion import DeletePathError, delete_path  # noqa: TC004
+    from ridge.backends._scripts.roots import RootViewError, narrow_root  # noqa: TC004
 
 
 def reply(value: dict[str, Any]) -> None:
@@ -64,6 +65,11 @@ def main() -> None:
 
     operation = sys.argv[2]
     root_text = sys.argv[1]
+    if len(sys.argv) > 3:
+        try:
+            root_text = str(narrow_root(Path(root_text), tuple(json.loads(sys.argv[3]))))
+        except RootViewError as error:
+            fail(error.kind, str(error))
     path_text = request.get("path", ".")
     if operation == "delete":
         try:

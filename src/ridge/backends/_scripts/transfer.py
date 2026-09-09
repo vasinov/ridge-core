@@ -11,7 +11,10 @@ import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
 from types import FrameType
-from typing import Any, Never, cast
+from typing import TYPE_CHECKING, Any, Never, cast
+
+if TYPE_CHECKING:
+    from ridge.backends._scripts.roots import RootViewError, narrow_root  # noqa: TC004
 
 CHUNK_SIZE = 64 * 1024
 METADATA_NAME = ".ridge-transfer.json"
@@ -555,6 +558,11 @@ def main() -> None:
         fail("transfer", "invalid Ridge transfer request: " + str(error))
 
     root = resource_root(sys.argv[1])
+    if len(sys.argv) > 3:
+        try:
+            root = narrow_root(root, tuple(json.loads(sys.argv[3])))
+        except RootViewError as error:
+            fail(error.kind, str(error))
     operation = sys.argv[2]
     try:
         if operation == "export-file":

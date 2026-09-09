@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Mapping, Sequence
+from copy import copy
 from pathlib import PurePosixPath
 from typing import cast
 
@@ -10,6 +11,7 @@ from ridge.backends._helper import (
     HelperOperations,
     HelperTransportResult,
 )
+from ridge.backends._scripts.roots import validate_root
 from ridge.backends._source import HELPER_SOURCE, TRANSFER_HELPER_SOURCE
 from ridge.backends._transfer import ProcessTransferOperations
 from ridge.errors import InvalidPathError, PathTypeError, ResourceUnavailableError
@@ -52,13 +54,25 @@ class DockerResource:
         self.docker_executable = docker_executable
         self._configured_properties = dict(configured_properties or {})
         self._operations = HelperOperations(self)
+        self._data_roots: tuple[str, ...] = ()
         self._transfer = ProcessTransferOperations(self.name, self._transfer_command)
         self.capabilities = ResourceCapabilities(
             compute=self,
             filesystem=self,
             transfer=self,
             delete=self,
+            data_views=self,
         )
+
+    def validate_data_root(self, root: str) -> None:
+        validate_root(root)
+
+    def open_data_view(self, roots: tuple[str, ...]) -> ResourceCapabilities:
+        view = copy(self)
+        view._data_roots = roots
+        view._operations = HelperOperations(view)
+        view._transfer = ProcessTransferOperations(view.name, view._transfer_command)
+        return ResourceCapabilities(filesystem=view, transfer=view, delete=view)
 
     def _transfer_command(self, operation: str) -> tuple[str, ...]:
         return (
@@ -71,6 +85,7 @@ class DockerResource:
             TRANSFER_HELPER_SOURCE,
             self.root,
             operation,
+            *((json.dumps(self._data_roots),) if self._data_roots else ()),
         )
 
     def open_transfer_source(self, path: str) -> TransferSource:
@@ -185,6 +200,7 @@ class DockerResource:
                 HELPER_SOURCE,
                 self.root,
                 operation,
+                *((json.dumps(self._data_roots),) if self._data_roots else ()),
             ),
             input_bytes=request_bytes,
             timeout_seconds=timeout_seconds,

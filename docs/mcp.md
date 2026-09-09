@@ -11,6 +11,10 @@ rechecked for each call. Never pass access handles as individual tool arguments.
 share the [task delegation contract](concepts/authorization.md#create-bind-and-close-a-task)
 with CLI/Python. `create_scope` accepts a list of structured resource grants and
 optional absolute `expires_at`; only its result includes the new bearer token.
+Grant `data_root` narrows data addressing relative to the parent view;
+`inspect_access` reports the inherited `data_root_chain`. See
+[rooted data semantics](concepts/authorization.md#narrow-data-views) before using
+compute alongside a narrower data grant.
 
 For Codex, configure absolute paths:
 

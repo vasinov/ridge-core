@@ -81,6 +81,10 @@ Python code; empty or invalid strings fail closed.
 See [task access](concepts/authorization.md#create-bind-and-close-a-task) for
 attenuation, expiry, visibility, and the distinction from lock sessions.
 
+`AccessGrant(..., data_root="outputs/task-a")` narrows data access relative to the
+parent view. The directory is validated when used, not created at issuance.
+Omitting `data_root` inherits the parent's view; compute is not narrowed.
+
 ## Managed sessions
 
 ::: ridge.ManagedSession

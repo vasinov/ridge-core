@@ -105,9 +105,12 @@ steps are separate. Do not modify agent-client settings unless requested.
 Read the installed [delegation contract](https://vasinov.github.io/ridge-core/concepts/authorization/#create-bind-and-close-a-task)
 and inspect effective access first. Confirm which resources and operations the
 child needs. A missing delegation grant is an operator decision, not permission to
-edit YAML, clear a binding, or retry as operator. Supported scopes currently select
-whole named resources; narrower root requests must not be approximated with broader
-grants.
+edit YAML, clear a binding, or retry as operator. Use a grant's optional `data_root`
+to narrow data access relative to the parent's view. Omission inherits that view.
+Inspect `data_root_chain` to verify effective boundaries. Filesystem view directories
+must exist when used; scope creation does not create or remotely inspect them.
+S3 roots are literal relative prefixes, not filesystem paths. Unsupported providers
+must not be approximated with broader grants. Compute remains resource-wide.
 
 Use `ridge scope create --grant '{"resource":"inputs","operations":["data.read","data.stat"]}'`
 or MCP `create_scope(grants=[...])`, against the selected workspace. Add
@@ -129,3 +132,7 @@ scope IDs for inspection and revocation. On completion, the parent revokes the t
 Revocation blocks access but does not cancel running jobs or release held locks;
 inspect/cancel work and close reservations separately when required. Do not clear an
 invalid or closed binding to regain operator access.
+
+A delegate-only parent may inspect results/logs and cancel descendant jobs within
+its current delegation grants, without gaining direct resource use. Own job access
+still requires use grants. Check authority again if policy changed.

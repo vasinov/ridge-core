@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from ridge.backends._scripts.deletion import DeletePathError, delete_path
+from ridge.backends._scripts.roots import RootViewError, narrow_root, validate_root
 from ridge.backends._source import TRANSFER_HELPER_SOURCE
 from ridge.backends._transfer import ProcessTransferOperations
 from ridge.errors import (
@@ -249,7 +250,24 @@ class LocalResource(_InspectableResource):
             filesystem=self,
             transfer=self,
             delete=self,
+            data_views=self,
         )
+
+    def validate_data_root(self, root: str) -> None:
+        try:
+            validate_root(root)
+        except RootViewError as exc:
+            raise InvalidPathError(str(exc)) from exc
+
+    def open_data_view(self, roots: tuple[str, ...]) -> ResourceCapabilities:
+        try:
+            root = narrow_root(self.root, roots)
+        except RootViewError as exc:
+            error = {"path_not_found": PathNotFoundError, "path_type": PathTypeError}.get(
+                exc.kind, InvalidPathError
+            )
+            raise error(str(exc)) from exc
+        return LocalResource(self.name, root).capabilities
 
     def _detected_properties(self) -> Mapping[str, PropertyScalar]:
         return {
