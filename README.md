@@ -49,7 +49,8 @@ shows the commands and provides bundled inputs.
 - **Keep artifacts out of model context.** Stream datasets, model files, and
   reports between resources with bounded transfer memory; read back what matters.
 - **Give agents a shared way to coordinate.** Automatic resource locks reject
-  conflicting Ridge calls; sessions reserve resources across a multi-step task.
+  conflicting Ridge calls while independent S3 object operations can overlap;
+  sessions reserve whole resources across a multi-step task.
 - **Discover before acting.** Agents can inspect both supported operations and
   the operations your Ridge configuration allows.
 - **Delegate bounded tasks.** Derive child access to named resources and narrower

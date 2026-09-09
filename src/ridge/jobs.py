@@ -28,6 +28,7 @@ from ridge._job_process import (
     encode_json,
     timestamp,
 )
+from ridge.claims import Claim
 from ridge.coordination import Coordination, read_scopes
 from ridge.errors import JobConflictError, JobNotFoundError, RidgeError
 from ridge.model import Job, JobKind, JobLog, JobPage, JobScope, JobStatus, JobSummary, Operation
@@ -70,6 +71,7 @@ class JobManager:
         idempotency_key: str | None = None,
         lock_token: str | None = None,
         local_only: bool = False,
+        claims: Sequence[Claim] | None = None,
     ) -> Job:
         if idempotency_key == "":
             raise ValueError("idempotency_key must be non-empty or None")
@@ -119,7 +121,13 @@ class JobManager:
 
             job_id = str(uuid.uuid4())
             self.coordination.admit(
-                connection, job_id, scopes, token=lock_token, local_only=local_only, job_id=job_id
+                connection,
+                job_id,
+                scopes,
+                token=lock_token,
+                local_only=local_only,
+                job_id=job_id,
+                claims=claims,
             )
             job_directory = self.directory / job_id
             job_directory.mkdir(mode=0o700)

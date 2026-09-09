@@ -14,11 +14,11 @@ while running the program, and retrieve its output before releasing it. Without
 that session, another agent could acquire the worker between those calls. Managed
 caller sessions handle renewal during long operations and model reasoning.
 
-Locks apply to resource keys, not individual file paths: two writes to different
-files in one resource still conflict. Independent resources can be used in
-parallel, and shared reads can coexist. Prefer separate working areas for tasks
-that do not need to share mutable state; use matching lock keys for aliases or
-overlapping roots that do.
+S3 read/stat/write/delete and copy endpoints lock exact objects, so operations on
+different keys can overlap. Filesystem operations and compute still lock whole
+resources: two writes to different files in one resource conflict. Shared reads
+can coexist. Prefer separate working areas for independent tasks; use matching
+lock keys for aliases or overlapping roots.
 
 ## Coordination boundary
 
@@ -34,13 +34,17 @@ or overlapping roots; Ridge does not infer physical identity. The
 [security model](../security.md) defines the participation boundary.
 
 Reads, lists, and stats take shared claims. Writes, deletion, and execution take exclusive
-claims. Copy takes shared source and exclusive destination claims, combining equal
-keys into one exclusive claim. Ordinary calls acquire temporary claims and fail
+claims. Copy atomically takes shared source and exclusive destination claims for
+the full transfer and cleanup lifetime, combining identical claims at the stronger
+mode. Ordinary calls acquire temporary claims and fail
 immediately on contention. Background jobs are not queued waiting for claims.
 Deletion sessions must declare `data.delete`, including for background submission;
 `data.write` ownership alone does not authorize or declare deletion.
 
 Explicit sessions reserve a complete set of resource/operation pairs atomically.
+Reservations remain whole-resource even for S3 and scoped data views. Independent
+object operations within the same session may overlap, but outsiders still conflict
+with its whole-resource reservation. There is no narrow reservation API.
 Every pair must be supported and authorized before acquisition. Calls recheck
 authorization and the session's declared operations. Tokens do not grant authority.
 Conflicting calls within a session also conflict. There are no incremental claims,
@@ -81,6 +85,40 @@ cancel execution. Inspect external effects before overriding uncertain ownership
 
 A session protects a sequence only if callers use its token for every
 participating operation.
+
+### Action-defined footprints
+
+A claim has a `domain` (the configured lock key), `scope` (an opaque component
+array or `null` for the whole domain), and shared/exclusive `mode`. Equal or
+ancestor scopes overlap; overlap conflicts when either claim is exclusive.
+Scope components are not universally filesystem paths.
+
+For S3 the complete bucket-relative key, including configured and delegated
+prefixes, is one component: `["datasets/task-a/result.csv"]`. Thus exact objects
+`a` and `a/b` are independent, not parent and child. S3 listing takes a whole-domain
+shared claim, so it conflicts with any write in that domain. Prefix reservations
+are not supported. Aliases targeting the same full key obtain identical scopes.
+
+Narrowing requires compatible coordinate mappings for every configured resource
+sharing the domain, including resources hidden from a delegated caller. Built-in
+S3 aliases must name the same bucket; different prefixes are supported. Mixed,
+unknown, or incompatible mappings keep the entire domain whole-resource. Unsupported
+actions also retain whole-domain claims. No extra configuration or caller-supplied
+footprint is needed. Permissions are checked independently of this planning.
+
+Background jobs persist their admitted footprints. Before dispatch a worker checks
+that its current plan fits those claims; changed coverage fails instead of silently
+acquiring more locks. Uncertain operations retain their original footprint, so
+unrelated objects can proceed while the affected target remains blocked.
+
+Lock inspection returns `claims` as a list, for example:
+
+```json
+[{"domain":"artifacts","scope":["runs/task-a/result.csv"],"mode":"exclusive"}]
+```
+
+These canonical coordinates can include parent prefixes, not just view-relative
+paths. Treat managed state and inspection output as operational metadata.
 
 ## Example session
 

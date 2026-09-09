@@ -21,6 +21,7 @@ from ridge._access import (
     ScopePage,
     ScopeStore,
 )
+from ridge._planning import FootprintPlanner
 from ridge._views import bind_data_views
 from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Authorizer
 from ridge.config import LoadedConfiguration, load_configuration, read_configuration
@@ -100,6 +101,7 @@ class RidgeService:
         self._binding: _ScopeBinding | None = None
         self._access: RequestAccess | None = None
         self._loaded: LoadedConfiguration | None = None
+        self._planner = FootprintPlanner(registry, jobs.coordination.keys if jobs else {})
 
     def _request_service(self) -> RidgeService:
         if self._binding is None:
@@ -155,6 +157,7 @@ class RidgeService:
             ),
         )
         service = cls._from_configuration(filtered)
+        service._planner = FootprintPlanner(loaded.registry, loaded.lock_keys, access.data_roots)
         service._access = request
         assert service._jobs is not None
         service._jobs.access = request
@@ -384,7 +387,9 @@ class RidgeService:
             self._jobs.reconcile_claims()
 
     @contextmanager
-    def _operation(self, scopes: Sequence[JobScope]) -> Generator[None]:
+    def _operation(
+        self, scopes: Sequence[JobScope], paths: Sequence[str | None] | None = None
+    ) -> Generator[None]:
         from ridge._job_process import current_job
 
         if self._jobs is None:
@@ -393,13 +398,17 @@ class RidgeService:
             yield
             return
         job_id = current_job.get()
+        claims = self._planner.plan(scopes, paths)
         if job_id is not None:
-            self._coordination().validate_job(job_id, scopes)
+            self._coordination().validate_job(job_id, scopes, claims)
             yield
             return
         self._reconcile_jobs()
         with self._coordination().operation(
-            scopes, token=self._operation_token(), local_only=self._local_scopes(scopes)
+            scopes,
+            token=self._operation_token(),
+            local_only=self._local_scopes(scopes),
+            claims=claims,
         ):
             yield
 
@@ -572,7 +581,7 @@ class RidgeService:
     @_fresh_access
     def read_data(self, resource: str, path: str, *, max_bytes: int | None = None) -> bytes:
         target = self._data(resource, Operation.DATA_READ, {"path": path, "max_bytes": max_bytes})
-        with self._operation((JobScope(resource, Operation.DATA_READ),)):
+        with self._operation((JobScope(resource, Operation.DATA_READ),), (path,)):
             if target.storage is not None:
                 return target.storage.read_object(path, max_bytes=max_bytes)
             assert target.filesystem is not None
@@ -581,7 +590,7 @@ class RidgeService:
     @_fresh_access
     def write_data(self, resource: str, path: str, content: bytes) -> None:
         target = self._data(resource, Operation.DATA_WRITE, {"path": path})
-        with self._operation((JobScope(resource, Operation.DATA_WRITE),)):
+        with self._operation((JobScope(resource, Operation.DATA_WRITE),), (path,)):
             if target.storage is not None:
                 target.storage.write_object(path, content)
             else:
@@ -605,6 +614,7 @@ class RidgeService:
             scopes,
             {"resource": resource, "path": path},
             payload=content,
+            claims=self._planner.plan(scopes, (path,)),
             idempotency_key=idempotency_key,
             lock_token=self._operation_token(),
             local_only=self._local_scopes(scopes),
@@ -613,7 +623,7 @@ class RidgeService:
     @_fresh_access
     def stat_data(self, resource: str, path: str) -> FileStat | ObjectStat:
         target = self._data(resource, Operation.DATA_STAT, {"path": path})
-        with self._operation((JobScope(resource, Operation.DATA_STAT),)):
+        with self._operation((JobScope(resource, Operation.DATA_STAT),), (path,)):
             if target.storage is not None:
                 return target.storage.stat_object(path)
             assert target.filesystem is not None
@@ -651,7 +661,7 @@ class RidgeService:
     def delete_data(self, resource: str, path: str, *, recursive: bool = False) -> DeleteResult:
         """Delete an exact entry; recursive trees are non-atomic and never rolled back."""
         target = self._prepare_delete(resource, path, recursive)
-        with self._operation((JobScope(resource, Operation.DATA_DELETE),)):
+        with self._operation((JobScope(resource, Operation.DATA_DELETE),), (path,)):
             try:
                 return target.delete(path, recursive=recursive)
             except BaseException as exc:
@@ -677,6 +687,7 @@ class RidgeService:
             JobKind.DELETE,
             scopes,
             {"resource": resource, "path": path, "recursive": recursive},
+            claims=self._planner.plan(scopes, (path,)),
             idempotency_key=idempotency_key,
             lock_token=self._operation_token(),
             local_only=self._local_scopes(scopes),
@@ -717,7 +728,7 @@ class RidgeService:
         self, source: str | ResourceLocation, destination: str | ResourceLocation
     ) -> CopyResult:
         request, scopes = self._prepare_copy(source, destination)
-        with self._operation(scopes):
+        with self._operation(scopes, (request.source.path, request.destination.path)):
             return copy(self._registry, request)
 
     @_fresh_access
@@ -737,6 +748,7 @@ class RidgeService:
                 "source": f"{request.source.resource}:{request.source.path}",
                 "destination": f"{request.destination.resource}:{request.destination.path}",
             },
+            claims=self._planner.plan(scopes, (request.source.path, request.destination.path)),
             idempotency_key=idempotency_key,
             lock_token=self._operation_token(),
             local_only=self._local_scopes(scopes),

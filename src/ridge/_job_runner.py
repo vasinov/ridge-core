@@ -80,6 +80,7 @@ def _work(directory: Path, job_id: str, gate: int) -> int:
         stdout_path.touch(mode=0o600)
         stderr_path.touch(mode=0o600)
         from ridge._access import ScopeStore
+        from ridge._planning import FootprintPlanner
         from ridge._views import bind_data_views
         from ridge.application import RidgeService
         from ridge.config import load_configuration
@@ -89,10 +90,13 @@ def _work(directory: Path, job_id: str, gate: int) -> int:
             expected_resource_identities=manager.resource_identities,
             expected_state_directory=manager.directory,
         )
+        roots: dict[str, tuple[str, ...]] = {}
+        registry = loaded.registry
         if row["access_scope_id"]:
             roots = ScopeStore(directory).job_roots(loaded, row["access_scope_id"])
             loaded = replace(loaded, registry=bind_data_views(loaded.registry, roots))
         service = RidgeService._from_configuration(loaded)  # pyright: ignore[reportPrivateUsage]
+        service._planner = FootprintPlanner(registry, loaded.lock_keys, roots)  # pyright: ignore[reportPrivateUsage]
         kind = JobKind(row["kind"])
         if kind is JobKind.EXECUTE:
             argv = cast(list[str], request["argv"])

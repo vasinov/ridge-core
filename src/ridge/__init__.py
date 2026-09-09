@@ -3,6 +3,7 @@
 from ridge._access import AccessGrant, IssuedScope, ScopeAccessError, ScopeInfo, ScopePage
 from ridge.application import RidgeService
 from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Authorizer
+from ridge.claims import Footprint
 from ridge.config import LoadedConfiguration, load_configuration, load_registry
 from ridge.errors import AuthorizationDeniedError, LockConflictError, LockOwnershipError, RidgeError
 from ridge.model import (
@@ -24,6 +25,7 @@ from ridge.resource import (
     DataViewCapability,
     DeleteCapability,
     FilesystemCapability,
+    FootprintCapability,
     Resource,
     ResourceCapabilities,
     StorageCapability,
@@ -45,6 +47,8 @@ __all__ = [
     "DeleteCapability",
     "DeleteResult",
     "FilesystemCapability",
+    "Footprint",
+    "FootprintCapability",
     "IssuedScope",
     "Job",
     "JobKind",

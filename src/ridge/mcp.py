@@ -157,12 +157,18 @@ class JobScopeResult(_WireModel):
     operation: str
 
 
+class ClaimResult(_WireModel):
+    domain: str
+    scope: list[str] | None
+    mode: Literal["shared", "exclusive"]
+
+
 class LockResult(_WireModel):
     id: str
     kind: Literal["session", "operation"]
     status: Literal["open", "closing", "active", "uncertain", "released"]
     scopes: list[JobScopeResult]
-    claims: dict[str, Literal["shared", "exclusive"]]
+    claims: list[ClaimResult]
     access_scope_id: str | None = None
     expires_at: float | None = None
     lease_seconds: float | None = None

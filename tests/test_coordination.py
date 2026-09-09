@@ -301,7 +301,7 @@ def test_copy_combines_aliases_and_obeys_both_scopes(tmp_path: Path) -> None:
     service = _service(tmp_path)
     (tmp_path / "data" / "input").write_bytes(b"copy")
     session = service.acquire_locks([_scope("a", Operation.DATA_READ), _scope("b")])
-    assert session["claims"] == {"a": "exclusive"}
+    assert session["claims"] == [{"domain": "a", "scope": None, "mode": "exclusive"}]
     service.with_lock(_token(session)).copy("a:input", "b:output")
     assert (tmp_path / "data" / "output").read_bytes() == b"copy"
 

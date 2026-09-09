@@ -68,6 +68,12 @@ changing the state directory does too. Provider defaults and equivalent path spe
 are not normalized, so an explicit provider-option edit may conservatively reject
 the attempt even when it names the same target.
 
+Workers also verify that the current action footprint fits the persisted claims.
+Changing another resource in the same lock domain can affect alias compatibility
+and broaden the required footprint; that rejects an already-narrow job before
+dispatch. It does not silently acquire more locks. Changes in unrelated domains
+do not affect this coverage check.
+
 Execution uses that checked document and rechecks the job's required grants.
 Removing an unrelated grant is harmless; removing a required grant denies execution.
 Adding grants does not change the submitted operation. Later file edits do not replace

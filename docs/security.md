@@ -73,6 +73,10 @@ with declared resource scopes; different state directories, unrecognized aliases
 arbitrary compute access, and external tools can bypass it. Force-release records
 an operator reason and does not terminate work. See [coordination](guides/coordination.md).
 
+Persisted footprints and authorized lock inspection contain canonical coordinates,
+including configured and ancestor prefixes. They are operational metadata, not
+necessarily limited to the caller's view-relative names.
+
 For cancellation, distinguish a recorded request from verified `cancelled` status.
 Verification covers the owned local worker group, not remote or detached processes,
 and does not roll back effects. Follow [job recovery](guides/jobs.md#current-limitations)

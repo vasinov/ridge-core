@@ -49,6 +49,10 @@ returned token to `with_lock(token)`. That returns a separate service view, so
 concurrent callers do not mutate one another's session selection. Close ownership
 with `release_locks(token)`; see [session semantics](guides/coordination.md).
 
+Lock inspection exposes structured `{domain, scope, mode}` claim lists. Providers
+may implement public `FootprintCapability` using `Footprint` values for pure action
+planning; callers do not supply footprints. See [provider planning](providers.md).
+
 Prefer `with ridge.lock_session(scopes) as session:` for host-owned workflows;
 `session.service` attaches the token and a background thread renews the lease.
 `ManagedMCPSession(client, scopes)` provides an asyncio context with

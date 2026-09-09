@@ -164,8 +164,9 @@ has stopped. Existing cancellation and conservative claim recovery remain separa
 
 Resource views retain canonical coordination identity. For example, a view rooted
 at a parent's `outputs` directory and the parent location `outputs/report.csv`
-must identify the same target when the child addresses `report.csv`. Until granular
-coordination is implemented, both use the parent's whole-resource lock domain.
+must identify the same target when the child addresses `report.csv`. Filesystems
+use the parent's whole-resource lock domain; S3 exact objects use canonical full-key
+footprints when the domain's aliases are compatible.
 Neither child names nor task IDs create independent locks or state directories.
 
 ### Accepted first implementation

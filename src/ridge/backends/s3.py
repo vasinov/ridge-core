@@ -12,6 +12,7 @@ from botocore.exceptions import (  # pyright: ignore[reportMissingTypeStubs]
     ClientError,
 )
 
+from ridge.claims import Footprint
 from ridge.errors import (
     InvalidPathError,
     ObjectNotFoundError,
@@ -26,6 +27,7 @@ from ridge.model import (
     ObjectEntry,
     ObjectPage,
     ObjectStat,
+    Operation,
     PropertyScalar,
     ResourceProperty,
     TransferPayloadKind,
@@ -226,8 +228,28 @@ class S3Resource:
         self._client: Any = client
         self._delete_client: Any = client
         self.capabilities = ResourceCapabilities(
-            storage=self, transfer=self, delete=self, data_views=self
+            storage=self, transfer=self, delete=self, data_views=self, footprints=self
         )
+
+    def coordinate_space(self) -> tuple[str, ...]:
+        return ("s3-object", self.bucket)
+
+    def plan_footprint(
+        self, operation: Operation, path: str, roots: tuple[str, ...]
+    ) -> tuple[Footprint, ...] | None:
+        if operation not in {
+            Operation.DATA_READ,
+            Operation.DATA_STAT,
+            Operation.DATA_WRITE,
+            Operation.DATA_DELETE,
+        }:
+            return None
+        view = copy(self)
+        for root in roots:
+            self.validate_data_root(root)
+            view.prefix = f"{view.prefix}/{root}" if view.prefix else root
+        mode = "shared" if operation.effect == "read" else "exclusive"
+        return (Footprint((view._full_key(path),), mode),)
 
     def validate_data_root(self, root: str) -> None:
         if not root or root.startswith("/") or root.endswith("/") or "\0" in root:

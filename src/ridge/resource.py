@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import BinaryIO, Literal, Protocol, runtime_checkable
 
+from ridge.claims import Footprint
 from ridge.model import (
     DeleteResult,
     ExecResult,
@@ -116,6 +117,17 @@ class StorageCapability(Protocol):
 
 
 @runtime_checkable
+class FootprintCapability(Protocol):
+    """Pure planning; equal coordinate spaces must mean compatible canonical scopes."""
+
+    def coordinate_space(self) -> tuple[str, ...] | None: ...
+
+    def plan_footprint(
+        self, operation: Operation, path: str, roots: tuple[str, ...]
+    ) -> tuple[Footprint, ...] | None: ...
+
+
+@runtime_checkable
 class DataViewCapability(Protocol):
     """Pure root validation and lazy, provider-owned narrowing of data capabilities."""
 
@@ -139,8 +151,11 @@ class ResourceCapabilities:
     transfer: TransferCapability | None = None
     delete: DeleteCapability | None = None
     data_views: DataViewCapability | None = None
+    footprints: FootprintCapability | None = None
 
     def __post_init__(self) -> None:
+        if self.footprints is not None:
+            _validate_capability("footprints", self.footprints, FootprintCapability)
         if self.filesystem is not None and self.storage is not None:
             raise ValueError("a resource must select one data addressing model")
         if self.transfer is not None and self.filesystem is None and self.storage is None:

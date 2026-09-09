@@ -72,6 +72,13 @@ with shared state and matching keys. Do not infer remote overlap from path text
 alone, move existing state, or claim validation detects these mistakes. Resolve
 ambiguous shared-resource ownership with the user.
 
+Exact S3 operations can overlap on different full keys, including delegated
+prefixes, when every alias in the lock domain has compatible coordinates.
+Filesystem operations, compute, and explicit sessions remain whole-resource;
+incompatible aliases also retain broad locking. Do not assign different lock keys
+to overlapping resources merely to obtain parallelism. Inspect structured `claims`
+for the effective domain, scope and mode when diagnosing contention.
+
 ## Validate and hand off
 
 Run `ridge --config /absolute/path/to/ridge.yaml config validate --json` using the

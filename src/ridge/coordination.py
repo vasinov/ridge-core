@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from ridge._access import RequestAccess, ScopeAccessError
+from ridge.claims import Claim, conflicts, covers, decode_claims, encode_claims, normalize
 from ridge.errors import LockConflictError, LockOwnershipError
 from ridge.model import JobScope, Operation
 
@@ -79,14 +80,13 @@ class Coordination:
         finally:
             connection.close()
 
-    def claims(self, scopes: Sequence[JobScope]) -> dict[str, str]:
-        claims: dict[str, str] = {}
+    def claims(self, scopes: Sequence[JobScope]) -> tuple[Claim, ...]:
+        claims: list[Claim] = []
         for scope in scopes:
             key = self.keys.get(scope.resource, scope.resource)
             mode = "shared" if scope.operation.effect == "read" else "exclusive"
-            if claims.get(key) != "exclusive":
-                claims[key] = mode
-        return claims
+            claims.append(Claim(None, mode, key))
+        return normalize(claims)
 
     def reconcile(self, connection: sqlite3.Connection) -> None:
         connection.execute(
@@ -117,18 +117,18 @@ class Coordination:
         """)
 
     @staticmethod
-    def _conflicts(left: Mapping[str, str], right: Mapping[str, str]) -> bool:
-        return any(key in right and "exclusive" in (mode, right[key]) for key, mode in left.items())
+    def _conflicts(left: Sequence[Claim], right: Sequence[Claim]) -> bool:
+        return conflicts(left, right)
 
     def _check(
-        self, connection: sqlite3.Connection, claims: dict[str, str], session: str | None
+        self, connection: sqlite3.Connection, claims: Sequence[Claim], session: str | None
     ) -> None:
         for table in ("lock_sessions", "lock_operations"):
             rows = connection.execute(f"SELECT * FROM {table} WHERE status != 'released'")
             for row in rows:
                 if table == "lock_sessions" and row["id"] == session:
                     continue
-                if self._conflicts(claims, json.loads(row["claims_json"])):
+                if self._conflicts(claims, decode_claims(row["claims_json"])):
                     # Do not disclose another inventory's resource names or operation IDs.
                     raise LockConflictError("resource claims conflict with existing ownership")
 
@@ -173,7 +173,7 @@ class Coordination:
                             identity,
                             hashlib.sha256(token.encode()).hexdigest(),
                             json.dumps(scopes_value(scopes)),
-                            json.dumps(claims),
+                            encode_claims(claims),
                             time.time() + lease_seconds,
                             lease_seconds,
                             access.scope.id if access else None,
@@ -227,10 +227,11 @@ class Coordination:
         token: str | None,
         local_only: bool,
         job_id: str | None = None,
+        claims: Sequence[Claim] | None = None,
     ) -> None:
         access = self.access.check(connection, scopes) if self.access else None
         self.reconcile(connection)
-        claims = self.claims(scopes)
+        claims = self.claims(scopes) if claims is None else normalize(claims)
         session: str | None = None
         if token is not None:
             row = self._session(connection, token)
@@ -241,11 +242,8 @@ class Coordination:
             declared = read_scopes(row["scopes_json"])
             if any(scope not in declared for scope in scopes):
                 raise LockOwnershipError("operation was not declared by this session")
-            held = json.loads(row["claims_json"])
-            if any(
-                key not in held or (mode == "exclusive" and held[key] != mode)
-                for key, mode in claims.items()
-            ):
+            held = decode_claims(row["claims_json"])
+            if not covers(held, claims):
                 raise LockOwnershipError("resource lock keys changed; acquire a new session")
             session = row["id"]
         self._check(connection, claims, session)
@@ -256,7 +254,7 @@ class Coordination:
                 session,
                 job_id,
                 json.dumps(scopes_value(scopes)),
-                json.dumps(claims),
+                encode_claims(claims),
                 int(local_only),
                 access.scope.id if access else None,
             ),
@@ -279,7 +277,12 @@ class Coordination:
 
     @contextmanager
     def operation(
-        self, scopes: Sequence[JobScope], *, token: str | None, local_only: bool
+        self,
+        scopes: Sequence[JobScope],
+        *,
+        token: str | None,
+        local_only: bool,
+        claims: Sequence[Claim] | None = None,
     ) -> Generator[None]:
         identity = str(uuid.uuid4())
         owners = self.directory / "operations"
@@ -290,7 +293,14 @@ class Coordination:
             fcntl.flock(owner, fcntl.LOCK_EX)
             try:
                 with self.transaction() as connection:
-                    self.admit(connection, identity, scopes, token=token, local_only=local_only)
+                    self.admit(
+                        connection,
+                        identity,
+                        scopes,
+                        token=token,
+                        local_only=local_only,
+                        claims=claims,
+                    )
             except (LockConflictError, LockOwnershipError, ScopeAccessError):
                 # Rejected identities were never published to observers.
                 owner_path.unlink(missing_ok=True)
@@ -361,7 +371,9 @@ class Coordination:
                 self.access.check(connection, owner=row["access_scope_id"], require_owner=True)
             return read_scopes(row["scopes_json"])
 
-    def validate_job(self, identity: str, scopes: Sequence[JobScope]) -> None:
+    def validate_job(
+        self, identity: str, scopes: Sequence[JobScope], claims: Sequence[Claim] | None = None
+    ) -> None:
         with self.transaction() as connection:
             row = connection.execute(
                 "SELECT * FROM lock_operations WHERE id = ? AND job_id = ?", (identity, identity)
@@ -370,6 +382,10 @@ class Coordination:
                 row is None
                 or row["status"] != "active"
                 or any(s not in read_scopes(row["scopes_json"]) for s in scopes)
+                or not covers(
+                    decode_claims(row["claims_json"]),
+                    self.claims(scopes) if claims is None else claims,
+                )
             ):
                 raise LockOwnershipError("job no longer owns its resource claims")
 

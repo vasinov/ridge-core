@@ -70,6 +70,28 @@ Do not create directories as part of view resolution. Returned listings/metadata
 use view-relative coordinates. Scope creation rejects narrowing when this capability
 is absent. Compute, registry names, managed state and canonical claims are not rebased.
 
+Optional `footprints=implementation` implements `FootprintCapability`:
+
+- `coordinate_space()` returns an immutable tuple identifying compatible canonical
+  coordinates, or `None` for unknown mapping. Every alias in the configured lock
+  domain must advertise the same space before Ridge narrows any operation there.
+- `plan_footprint(operation, path, roots)` returns a nonempty tuple of public
+  `Footprint(scope, mode)` values, or `None` for whole-resource fallback. Include
+  the complete immutable parent-relative root chain in canonical coordinates.
+  The plan must cover both direct operations and corresponding transfer endpoints,
+  including staging, publication, validation and cleanup. Mutating operations
+  require exclusive claims. Providers cannot select another lock domain.
+
+Both methods must be pure and nonconnecting: no mutable backend inspection,
+filesystem resolution, client construction, or side effects. Ridge calls them
+before admission, outside its database transaction, then rechecks scoped authority
+inside admission. A scope is `None` or a nonempty tuple of nonempty opaque strings;
+tuple ancestry, not text-prefix matching, defines overlap. Never claim narrow
+coverage that depends on unprotected mutable state. Unsupported planning falls
+back; malformed results fail. Oversize plans conservatively collapse to whole-domain
+claims (64 claims/action, 32 components/scope, 16 KiB encoded scope).
+Existing providers without this capability keep whole-resource locking.
+
 `ridge.conformance` contains reusable destructive checks for compute,
 filesystem, storage, deletion, and single-file transfer implementations. Run them only
 against disposable roots, prefixes, or test resources.

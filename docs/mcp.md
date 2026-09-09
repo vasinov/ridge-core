@@ -137,6 +137,10 @@ reason)` is only for uncertain operations and never cancels them. Sessions survi
 MCP disconnection and can also be used from the CLI. See
 [coordination and recovery](guides/coordination.md).
 
+Lock metadata's `claims` is a list of `{domain, scope, mode}` values; `scope` is
+an opaque component array or `null` for the whole domain. Exact S3 operations can
+overlap on different objects; `acquire_locks` still reserves whole resources.
+
 Hosts that own a multi-call workflow can use the Python `ManagedMCPSession`
 caller helper for automatic renewal and token injection. This requires host
 integration; the server does not keep idle sessions alive on its own. See

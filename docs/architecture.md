@@ -246,8 +246,8 @@ the same authoritative configuration; resources may span multiple backends.
 ## Authorization
 
 The [task access contract](concepts/authorization.md#delegated-task-access-design)
-owns operator and scope-bound workflows, including rooted data views. Granular
-lock footprints remain separate work.
+owns operator and scope-bound workflows, including rooted data views. Lock
+footprints describe interference independently of that authority.
 
 `authorization` owns policy decisions; `application` checks them before invoking
 capabilities through either frontend. Copy checks both endpoints before opening
@@ -296,7 +296,7 @@ no scope retention/deletion API.
 `_views` binds lazy data capability adapters using immutable, parent-relative
 `data_root` chains. Providers own syntax validation and physical narrowing; the
 coordinator remains path-agnostic. Every data capability call resolves the complete
-chain within its admitted whole-resource claim. Compute remains the original
+chain within its admitted claim (whole-resource for filesystems). Compute remains the original
 capability. Job workers recover their admitted chain from immutable scope records
 without requiring a still-active scope or retaining bearer credentials.
 
@@ -426,6 +426,29 @@ sessions, resource claims, operation registration, lease reconciliation, and
 recovery evidence. Providers do not acquire remote locks. Every configured CLI/MCP
 data/compute/copy workflow participates; direct backend use and services without
 configured state remain outside coordination.
+
+`claims` owns typed scope/mode values, tuple-ancestry overlap, coverage and
+normalization. `_planning` asks optional trusted `FootprintCapability` implementations
+for pure, nonconnecting action plans outside SQLite transactions. The application
+assigns configured domains and checks alias compatibility against the full inventory,
+not the scoped discovery view. Unknown mappings/actions use whole-domain effect
+modes; malformed plans fail before admission. Plans over 64 claims, 32 scope
+components or 16 KiB encoded scope collapse to whole-domain claims at the strongest
+requested mode. These are planning bounds, not a universal resource hierarchy.
+
+Accepted initial narrowing covers exact S3 data read/stat/write/delete and copy
+endpoints. S3 maps full keys to single opaque components, preserving literal key
+text and inherited prefixes; same-bucket aliases share coordinates. Listing,
+compute, filesystem operations and incompatible alias groups stay broad. Sessions
+still reserve whole domains. Foreground/background workflows use the same planner;
+workers replan against their checked inventory and immutable view roots and verify
+coverage by persisted claims before dispatch. Planning never resolves mutable
+filesystem state before acquiring protection. No incremental acquisition is added.
+
+Persisted `claims_json` and frontend inspection use one structured claim list
+(`domain`, nullable component-array `scope`, `mode`), not the earlier development
+key/mode map. There is no migration or dual-format reader; use the existing
+development-state replacement procedure after settling old work.
 
 Lock identity is the shared state directory plus a resource's `lock_key`, defaulting
 to its name. Aliases and overlapping resources must explicitly share keys. Resource
