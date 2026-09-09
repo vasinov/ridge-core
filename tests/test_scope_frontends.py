@@ -95,6 +95,12 @@ async def test_mcp_scope_tools_and_separate_stdio_binding(config: Path) -> None:
     operator = RidgeService.from_config(config)
     with anyio.fail_after(20):
         async with Client(create_server(operator)) as parent:
+            scope_tool = next(
+                tool for tool in (await parent.list_tools()).tools if tool.name == "create_scope"
+            )
+            schema = json.dumps(scope_tool.input_schema)
+            assert "Does not change compute.exec's working" in schema
+            assert "resource='results', data_root='task'" in schema
             created = await parent.call_tool(
                 "create_scope",
                 {"grants": [{"resource": "data", "operations": ["data.read", "data.stat"]}]},

@@ -42,7 +42,15 @@ class GrantModel(BaseModel):
     resource: str
     operations: list[Operation] = Field(default_factory=lambda: list[Operation]())
     delegation: list[Operation] = Field(default_factory=lambda: list[Operation]())
-    data_root: str | None = None
+    data_root: str | None = Field(
+        default=None,
+        description=(
+            "Optional relative data view for this grant's resource only. For example, "
+            "resource='results', data_root='task' restricts results data to task/. "
+            "Omit to inherit the parent's view. Does not change compute.exec's working "
+            "directory or restrict execution. Filesystem view directories must already exist."
+        ),
+    )
 
     @field_validator("operations", "delegation")
     @classmethod

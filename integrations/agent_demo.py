@@ -146,8 +146,13 @@ def run(directory: Path, client: str, executable: Path) -> dict[str, Any]:
             issued.token,
             "Use only Ridge MCP tools. Inspect your access and resources. Prepare access for a "
             "child to copy inputs:values.json to worker, run a Python sum calculation there, "
-            "then publish metrics.json to results under task/. Choose the minimum grants "
-            "needed including stat for inline reads. Inputs must stay read-only. No child "
+            "then publish metrics.json and read it back for verification. The child's results "
+            "resource view must be restricted to task/: it must not see or write outside "
+            "that directory, which already exists. The worker calculation uses its configured "
+            "working root, so its data view must stay aligned with that root: data_root narrows "
+            "data operations but does not change compute's working directory. "
+            "Choose the minimum grants needed including stat for inline reads. "
+            "Inputs must stay read-only. No child "
             "redelegation. Create the child scope now; do not execute its work. Return ONLY "
             'JSON {"scope_id":"...","token":"..."} from actual issuance. This response '
             "goes directly to trusted host code, not a child prompt or saved transcript.",
@@ -164,10 +169,12 @@ def run(directory: Path, client: str, executable: Path) -> dict[str, Any]:
         if set(grants) != set(operations) or any(g.delegation for g in grants.values()):
             raise RuntimeError("unexpected child resource or redelegation grants")
         if (
-            any(grants[name].operations != ops for name, ops in operations.items())
-            or grants["inputs"].data_root is not None
-            or grants["worker"].data_root is not None
-            or grants["results"].data_root != "task"
+            not {Operation.DATA_READ} <= grants["inputs"].operations <= READ
+            or not WORK - {Operation.DATA_STAT} <= grants["worker"].operations <= WORK
+            or grants["results"].operations != RESULTS
+            or Path(grants["inputs"].data_root or "").parts
+            or Path(grants["worker"].data_root or "").parts
+            or Path(grants["results"].data_root or "").parts != ("task",)
         ):
             raise RuntimeError("agent did not narrow task access correctly")
         try:

@@ -29,6 +29,9 @@ Expected result: score `10`, a job ID, a child scope ID, and confirmation of
 reconnection and revocation. The host checks actual artifacts, scope lineage,
 denied input mutation, completed jobs, and outstanding claims. It retains the
 workspace for inspection and closes access at the end, including on failure.
+The host accepts valid narrower grants on copy-only endpoints and equivalent
+local root spellings, but rejects access outside the requested output view
+before dispatching the child.
 
 The host captures client responses in memory: issuance includes a bearer token.
 The model provider receives that tool result as part of the conversation. The

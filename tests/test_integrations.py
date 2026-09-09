@@ -85,7 +85,12 @@ def test_agent_demo_refuses_existing_directory(tmp_path: Path) -> None:
     assert sentinel.read_text() == "keep"
 
 
-def test_agent_host_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    "optional_stat,output_root", [(True, "task"), (False, "task"), (True, "task/"), (True, ".")]
+)
+def test_agent_host_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, optional_stat: bool, output_root: str
+) -> None:
     host = module("agent_demo")
     calls: list[str] = []
 
@@ -96,12 +101,18 @@ def test_agent_host_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         service = RidgeService.from_config(config, scope_token=token)
         calls.append(prompt)
         read = frozenset({Operation.DATA_READ, Operation.DATA_STAT})
+        copy_read = read if optional_stat else frozenset({Operation.DATA_READ})
+        inherited_root = "." if output_root == "task/" else None
         if len(calls) == 1:
             issued = service.create_scope(
                 [
-                    AccessGrant("inputs", read),
-                    AccessGrant("worker", read | {Operation.DATA_WRITE, Operation.COMPUTE_EXEC}),
-                    AccessGrant("results", read | {Operation.DATA_WRITE}, data_root="task"),
+                    AccessGrant("inputs", copy_read, data_root=inherited_root),
+                    AccessGrant(
+                        "worker",
+                        copy_read | {Operation.DATA_WRITE, Operation.COMPUTE_EXEC},
+                        data_root=inherited_root,
+                    ),
+                    AccessGrant("results", read | {Operation.DATA_WRITE}, data_root=output_root),
                 ]
             )
             return {"token": issued.token, "scope_id": issued.scope.id}
@@ -125,9 +136,15 @@ def test_agent_host_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr(host, "invoke", invoke)
     workspace = tmp_path / "demo"
-    report = host.run(workspace, "codex", Path(sys.executable))
-    assert report["score"] == {"score": 10}
-    assert len(calls) == 3
+    if output_root == ".":
+        with pytest.raises(RuntimeError, match="narrow task access"):
+            host.run(workspace, "codex", Path(sys.executable))
+        assert len(calls) == 1
+        assert not (workspace / "worker/values.json").exists()
+    else:
+        report = host.run(workspace, "codex", Path(sys.executable))
+        assert report["score"] == {"score": 10}
+        assert len(calls) == 3
     service = RidgeService.from_config(workspace / "ridge.yaml")
     assert all(scope.status == "revoked" for scope in service.list_scopes().scopes)
     assert not service.list_locks()["entries"]

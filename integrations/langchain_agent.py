@@ -33,7 +33,10 @@ async def run(executable: Path, config: Path, token_file: Path, model: str, prom
             system_prompt=(
                 "Use Ridge tools for resource work. Inspect your access before acting. "
                 "Keep large payloads outside conversation using copy. Use bounded background "
-                "execution and inspect job completion. Delegation creates access, not an agent: "
+                "execution. Wait for every submitted job before dependent work, check its "
+                "status and execution exit_code, and report failures rather than assuming "
+                "outputs exist. Paths and compute cwd are resource-relative; omit cwd or use "
+                "'.' for the resource root, never '/'. Delegation creates access, not an agent: "
                 "only derive child scopes when the host has a secure child-binding mechanism. "
                 "Do not print bearer tokens. Return a concise result and artifact references."
             ),

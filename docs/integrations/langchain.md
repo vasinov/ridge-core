@@ -30,6 +30,11 @@ Choose a model available to your account. Other providers need their LangChain
 provider package and credentials. The sample bounds the agent run to three
 minutes and forty graph steps; your model provider bills normal usage.
 
+Resource paths and compute working directories are relative to the selected
+resource. Use `.` or omit `cwd` for its root, not `/`. Before dependent work,
+inspect every submitted job and its execution exit code; submission alone does
+not mean its outputs are ready.
+
 Use one adapter/connection per child binding. Do not change a global environment
 variable to switch concurrent agents' access. A child can reconnect using the
 same token file while its scope remains active; replacing file contents does
