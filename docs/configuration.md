@@ -10,7 +10,8 @@ is not necessarily a directory, repository, or agent conversation.
 Use the same configuration for participating CLI and MCP callers. There is no
 workspace creation command or additional file format. State is initialized when
 needed by runtime workflows, not by configuration validation. The configuration
-remains authoritative; workspace terminology does not add per-agent permissions.
+remains authoritative; [task scopes](concepts/authorization.md#delegated-task-access-design)
+derive narrower access without separate child inventories.
 
 The inventory contains uniquely named resources:
 
@@ -82,7 +83,8 @@ not sandboxed and may have their own side effects.
 The success summary shows resolved configuration and state paths, permission mode
 (`exact` or `unrestricted`), and each resource's name, provider, lock key, and
 effective allowed and delegable operations. Delegability is the intersection of
-`permissions` and `delegation`; it does not enable scope-bound frontend calls yet.
+`permissions` and `delegation`. Validation is operator-only; bound tasks use
+`access inspect` for their effective authority.
 The summary does not dump raw YAML or resource properties.
 Text success goes to stdout; text errors go to stderr. `--json` emits one object
 on stdout for either outcome:
@@ -180,9 +182,9 @@ delegation:
 
 Here only `data.read` is delegable; `data.stat` is usable but not delegable.
 Configuration validation reports the effective intersection without creating state.
-The map prepares the operator ceiling for the internal scope store; public scope
-creation, binding, and resource views are not available yet. See the
-[accepted delegation design](concepts/authorization.md#delegated-task-access-design).
+The map is the operator ceiling for `scope create` and the equivalent MCP tool.
+Task handles bind whole-resource subsets without rewriting the inventory; narrower
+data roots remain planned. See [task delegation](concepts/authorization.md#delegated-task-access-design).
 
 See the resource-specific pages for complete semantics:
 

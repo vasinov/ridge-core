@@ -56,6 +56,31 @@ Prefer `with ridge.lock_session(scopes) as session:` for host-owned workflows;
 renewal failure. See [managed caller sessions](guides/coordination.md#managed-caller-sessions)
 for lifecycle, cancellation, and integration requirements.
 
+## Delegated tasks
+
+```python
+from ridge import AccessGrant, Operation, RidgeService
+
+operator = RidgeService.from_config("ridge.yaml")
+issued = operator.create_scope(
+    [
+        AccessGrant("inputs", frozenset({Operation.DATA_READ, Operation.DATA_STAT})),
+    ]
+)
+child = RidgeService.from_config("ridge.yaml", scope_token=issued.token)
+print(child.inspect_access())
+operator.revoke_scope(issued.scope.id)
+```
+
+The workspace must permit and explicitly delegate these operations. Store the
+returned token securely; it is not returned by inspection. Bound service methods
+reload configuration and recheck lifecycle for each request. Python binding is
+explicit: `from_config()` does not read `RIDGE_SCOPE_TOKEN`; CLI/MCP entry points
+own environment/file transport. `None` deliberately selects operator mode in trusted
+Python code; empty or invalid strings fail closed.
+See [task access](concepts/authorization.md#create-bind-and-close-a-task) for
+attenuation, expiry, visibility, and the distinction from lock sessions.
+
 ## Managed sessions
 
 ::: ridge.ManagedSession

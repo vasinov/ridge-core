@@ -1,4 +1,4 @@
-"""Internal durable task authority; frontend admission is wired separately.
+"""Durable task authority and transactional request admission checks.
 
 Callers supply one freshly loaded, checked configuration per request. A resolved
 access value is an admission snapshot, not a reusable credential or resource lock.
@@ -26,7 +26,7 @@ from ridge.config import (
     read_configuration,
 )
 from ridge.errors import AuthorizationDeniedError
-from ridge.model import Operation
+from ridge.model import JobScope, Operation
 from ridge.provider import ResourceProviderRegistry
 
 _MAX_DEPTH = 32
@@ -39,6 +39,10 @@ class ScopeAccessError(AuthorizationDeniedError):
     def __init__(self, reason: str) -> None:
         self.reason = reason
         super().__init__(f"scope access denied: {reason}")
+
+    @property
+    def closes_scope(self) -> bool:
+        return isinstance(self, _ClosedScopeError)
 
 
 class _ClosedScopeError(ScopeAccessError):
@@ -128,6 +132,37 @@ def _read_grants(value: str) -> tuple[AccessGrant, ...]:
         )
         for grant in json.loads(value)
     )
+
+
+@dataclass(frozen=True, slots=True)
+class RequestAccess:
+    """Internal request context; revalidated inside every admission transaction."""
+
+    store: ScopeStore
+    loaded: LoadedConfiguration
+    token: str = field(repr=False)
+
+    def check(
+        self,
+        connection: sqlite3.Connection,
+        scopes: Sequence[JobScope] = (),
+        *,
+        owner: str | None = None,
+        require_owner: bool = False,
+        supervise: bool = False,
+    ) -> ScopeAccess:
+        access = self.store.resolve(self.loaded, self.token, connection=connection)
+        if require_owner and (
+            (not supervise and owner != access.scope.id)
+            or (
+                supervise
+                and not self.store.contains(connection, self.loaded, access.scope.id, owner)
+            )
+        ):
+            raise ScopeAccessError("unavailable")
+        if any(not access.allows(scope.resource, scope.operation) for scope in scopes):
+            raise ScopeAccessError("operation_not_allowed")
+        return access
 
 
 class ScopeStore:
@@ -314,7 +349,7 @@ class ScopeStore:
 
     def load_configuration(
         self,
-        config_path: str | Path,
+        config_path: str | Path | ConfigurationDocument,
         token: str,
         *,
         providers: ResourceProviderRegistry | None = None,
@@ -326,12 +361,28 @@ class ScopeStore:
         admission: the operation must check again in its claim transaction.
         """
         _token_hash(token)
-        document = read_configuration(config_path)
+        document = (
+            config_path
+            if isinstance(config_path, ConfigurationDocument)
+            else read_configuration(config_path)
+        )
         self._workspace(document)
         with self.transaction() as connection:
             self._active_rows(connection, document, token)
         loaded = construct_configuration(document, providers=providers)
         return loaded, self.resolve(loaded, token)
+
+    def contains(
+        self,
+        connection: sqlite3.Connection,
+        loaded: LoadedConfiguration,
+        ancestor: str,
+        descendant: str | None,
+    ) -> bool:
+        if descendant is None:
+            return False
+        rows = self._lineage(connection, self._row(connection, descendant), self._workspace(loaded))
+        return any(row["id"] == ancestor for row in rows)
 
     def issue(
         self,

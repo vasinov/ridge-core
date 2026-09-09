@@ -6,12 +6,23 @@ import json
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import copy as shallow_copy
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
+from datetime import datetime
+from functools import wraps
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO, Literal, Never, cast
+from typing import BinaryIO, Concatenate, Literal, Never, ParamSpec, TypeVar, cast
 
+from ridge._access import (
+    AccessGrant,
+    IssuedScope,
+    RequestAccess,
+    ScopeAccess,
+    ScopeInfo,
+    ScopePage,
+    ScopeStore,
+)
 from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Authorizer
-from ridge.config import LoadedConfiguration, load_configuration
+from ridge.config import LoadedConfiguration, load_configuration, read_configuration
 from ridge.coordination import Coordination
 from ridge.errors import (
     AuthorizationDeniedError,
@@ -49,6 +60,27 @@ from ridge.resource import (
 from ridge.sessions import ManagedSession
 from ridge.transfer import copy, validate_copy_locations
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+@dataclass(frozen=True, slots=True)
+class _ScopeBinding:
+    path: Path
+    state: Path
+    token: str = field(repr=False)
+
+
+def _fresh_access(
+    method: Callable[Concatenate[RidgeService, _P], _R],
+) -> Callable[Concatenate[RidgeService, _P], _R]:
+    @wraps(method)
+    def invoke(self: RidgeService, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        service = self._request_service()  # pyright: ignore[reportPrivateUsage]
+        return method(service, *args, **kwargs)
+
+    return invoke
+
 
 class RidgeService:
     """Frontend-neutral Ridge workflows over a resource registry."""
@@ -64,6 +96,20 @@ class RidgeService:
         self._jobs = jobs
         self._lock_token: str | None = None
         self._managed_check: Callable[[], None] | None = None
+        self._binding: _ScopeBinding | None = None
+        self._access: RequestAccess | None = None
+        self._loaded: LoadedConfiguration | None = None
+
+    def _request_service(self) -> RidgeService:
+        if self._binding is None:
+            return self
+        binding = self._binding
+        store = ScopeStore(binding.state)
+        loaded, access = store.load_configuration(binding.path, binding.token)
+        service = self._scoped_request(loaded, access, binding.token)
+        service._lock_token = self._lock_token
+        service._managed_check = self._managed_check
+        return service
 
     def lock_session(
         self, scopes: Sequence[JobScope], *, lease_seconds: float = 300, wait_seconds: float = 0
@@ -79,14 +125,45 @@ class RidgeService:
         return self._lock_token
 
     @classmethod
-    def from_config(cls, config_path: str | Path) -> RidgeService:
-        return cls._from_configuration(load_configuration(config_path))
+    def from_config(
+        cls, config_path: str | Path, *, scope_token: str | None = None
+    ) -> RidgeService:
+        if scope_token is None:
+            return cls._from_configuration(load_configuration(config_path))
+        document = read_configuration(config_path)
+        store = ScopeStore(document.state_directory)
+        loaded, access = store.load_configuration(document, scope_token)
+        service = cls._scoped_request(loaded, access, scope_token)
+        service._binding = _ScopeBinding(document.path, document.state_directory, scope_token)
+        return service
+
+    @classmethod
+    def _scoped_request(
+        cls, loaded: LoadedConfiguration, access: ScopeAccess, token: str
+    ) -> RidgeService:
+        assert loaded.state_directory is not None
+        request = RequestAccess(ScopeStore(loaded.state_directory), loaded, token)
+        filtered = replace(
+            loaded,
+            registry=ResourceRegistry(
+                loaded.registry.get(grant.resource) for grant in access.grants
+            ),
+            authorization=AuthorizationPolicy.exact(
+                {grant.resource: grant.operations for grant in access.grants}
+            ),
+        )
+        service = cls._from_configuration(filtered)
+        service._access = request
+        assert service._jobs is not None
+        service._jobs.access = request
+        service._jobs.coordination.access = request
+        return service
 
     @classmethod
     def _from_configuration(cls, loaded: LoadedConfiguration) -> RidgeService:
         if loaded.path is None or loaded.state_directory is None:
             return cls(loaded.registry, loaded.authorization)
-        return cls(
+        service = cls(
             loaded.registry,
             loaded.authorization,
             JobManager(
@@ -96,6 +173,105 @@ class RidgeService:
                 lock_keys=loaded.lock_keys,
             ),
         )
+        service._loaded = loaded
+        return service
+
+    def _scope_configuration(self) -> LoadedConfiguration:
+        if self._access is not None:
+            return self._access.loaded
+        if self._loaded is None or self._loaded.path is None:
+            raise JobsUnavailableError("task scopes require a configured workspace")
+        return load_configuration(self._loaded.path)
+
+    @_fresh_access
+    def create_scope(
+        self,
+        grants: Sequence[AccessGrant],
+        *,
+        expires_at: datetime | None = None,
+    ) -> IssuedScope:
+        """Derive task authority; the returned bearer handle is disclosed only once."""
+        loaded = self._scope_configuration()
+        assert loaded.state_directory is not None
+        return ScopeStore(loaded.state_directory).issue(
+            loaded,
+            grants,
+            actor_token=self._access.token if self._access else None,
+            expires_at=expires_at,
+        )
+
+    @_fresh_access
+    def list_scopes(self, *, cursor: str | None = None, limit: int = 100) -> ScopePage:
+        loaded = self._scope_configuration()
+        assert loaded.state_directory is not None
+        return ScopeStore(loaded.state_directory).list(
+            loaded,
+            actor_token=self._access.token if self._access else None,
+            cursor=cursor,
+            limit=limit,
+        )
+
+    @_fresh_access
+    def inspect_scope(self, identity: str) -> ScopeInfo:
+        loaded = self._scope_configuration()
+        assert loaded.state_directory is not None
+        return ScopeStore(loaded.state_directory).inspect(
+            loaded,
+            identity,
+            actor_token=self._access.token if self._access else None,
+        )
+
+    @_fresh_access
+    def revoke_scope(self, identity: str) -> ScopeInfo:
+        """Close scope admission without cancelling work or releasing resource claims."""
+        loaded = self._scope_configuration()
+        assert loaded.state_directory is not None
+        return ScopeStore(loaded.state_directory).revoke(
+            loaded,
+            identity,
+            actor_token=self._access.token if self._access else None,
+        )
+
+    @_fresh_access
+    def inspect_access(self) -> dict[str, object]:
+        """Report effective use and delegation authority, without bearer handles."""
+        loaded = self._scope_configuration()
+        if self._access:
+            with self._access.store.transaction() as connection:
+                access = self._access.check(connection)
+            grants = access.grants
+            identity = access.scope.id
+        else:
+            grants = tuple(
+                AccessGrant(
+                    name,
+                    frozenset(
+                        op
+                        for op in loaded.registry.get(name).capabilities.operations
+                        if loaded.authorization.allows(name, op)
+                    ),
+                    frozenset(
+                        op
+                        for op in loaded.registry.get(name).capabilities.operations
+                        if loaded.authorization.allows(name, op)
+                        and loaded.delegation.allows(name, op)
+                    ),
+                )
+                for name in loaded.registry.names()
+            )
+            identity = None
+        return {
+            "scope_id": identity,
+            "mode": "scope" if identity else "operator",
+            "resources": [
+                {
+                    "resource": grant.resource,
+                    "operations": sorted(op.value for op in grant.operations),
+                    "delegation": sorted(op.value for op in grant.delegation),
+                }
+                for grant in grants
+            ],
+        }
 
     def with_lock(self, token: str | None) -> RidgeService:
         """Return a request-scoped service using an explicit coordination session."""
@@ -120,6 +296,7 @@ class RidgeService:
                 self._unsupported(target, scope.operation)
             self._authorize(scope.resource, scope.operation, {"coordination": True})
 
+    @_fresh_access
     def acquire_locks(
         self, scopes: Sequence[JobScope], *, lease_seconds: float = 300, wait_seconds: float = 0
     ) -> dict[str, object]:
@@ -129,10 +306,12 @@ class RidgeService:
             scopes, lease_seconds=lease_seconds, wait_seconds=wait_seconds
         )
 
+    @_fresh_access
     def renew_locks(self, token: str) -> dict[str, object]:
         self._authorize_scopes(self._coordination().token_scopes(token))
         return self._coordination().session_action(token)
 
+    @_fresh_access
     def release_locks(self, token: str) -> dict[str, object]:
         return self._coordination().session_action(token, release=True)
 
@@ -143,17 +322,20 @@ class RidgeService:
             for s in cast(list[dict[str, str]], value["scopes"])
         )
 
+    @_fresh_access
     def inspect_lock(self, identity: str) -> dict[str, object]:
         self._reconcile_jobs()
         value = self._coordination().inspect(identity)
         self._authorize_scopes(self._lock_scopes(value))
         return value
 
+    @_fresh_access
     def force_release_lock(self, identity: str, *, reason: str) -> dict[str, object]:
         self.inspect_lock(identity)
         self._coordination().force_release(identity, reason)
         return self.inspect_lock(identity)
 
+    @_fresh_access
     def list_locks(self, *, cursor: str | None = None, limit: int = 100) -> dict[str, object]:
         if isinstance(limit, bool) or not 1 <= limit <= 200:
             raise ValueError("limit must be between 1 and 200")
@@ -171,6 +353,16 @@ class RidgeService:
             page = self._coordination().page(after=after, limit=100)
             for value in page:
                 after = str(value["id"])
+                if self._access:
+                    with self._access.store.transaction() as connection:
+                        access = self._access.check(connection)
+                        if not self._access.store.contains(
+                            connection,
+                            self._access.loaded,
+                            access.scope.id,
+                            cast(str | None, value["access_scope_id"]),
+                        ):
+                            continue
                 if all(
                     self._authorization.allows(s.resource, s.operation)
                     for s in self._lock_scopes(value)
@@ -205,12 +397,15 @@ class RidgeService:
         ):
             yield
 
+    @_fresh_access
     def list_resources(self) -> tuple[ResourceInspection, ...]:
         return tuple(self._with_permissions(item) for item in self._registry.inspections())
 
+    @_fresh_access
     def inspect_resource(self, resource: str) -> ResourceInspection:
         return self._with_permissions(self._registry.inspect(resource))
 
+    @_fresh_access
     def execute(
         self,
         resource: str,
@@ -236,6 +431,7 @@ class RidgeService:
         with self._operation((JobScope(resource, Operation.COMPUTE_EXEC),)):
             return target.exec(argv, cwd=cwd, env=env, timeout_seconds=timeout_seconds)
 
+    @_fresh_access
     def submit_execution(
         self,
         resource: str,
@@ -317,6 +513,7 @@ class RidgeService:
             stderr.write(result.stderr)
             return result
 
+    @_fresh_access
     def list_data(
         self,
         resource: str,
@@ -366,6 +563,7 @@ class RidgeService:
             )
             return DataPage("filesystem", entries, next_cursor)
 
+    @_fresh_access
     def read_data(self, resource: str, path: str, *, max_bytes: int | None = None) -> bytes:
         target = self._data(resource, Operation.DATA_READ, {"path": path, "max_bytes": max_bytes})
         with self._operation((JobScope(resource, Operation.DATA_READ),)):
@@ -374,6 +572,7 @@ class RidgeService:
             assert target.filesystem is not None
             return target.filesystem.read(path, max_bytes=max_bytes)
 
+    @_fresh_access
     def write_data(self, resource: str, path: str, content: bytes) -> None:
         target = self._data(resource, Operation.DATA_WRITE, {"path": path})
         with self._operation((JobScope(resource, Operation.DATA_WRITE),)):
@@ -383,6 +582,7 @@ class RidgeService:
                 assert target.filesystem is not None
                 target.filesystem.write(path, content)
 
+    @_fresh_access
     def submit_write(
         self,
         resource: str,
@@ -404,6 +604,7 @@ class RidgeService:
             local_only=self._local_scopes(scopes),
         )
 
+    @_fresh_access
     def stat_data(self, resource: str, path: str) -> FileStat | ObjectStat:
         target = self._data(resource, Operation.DATA_STAT, {"path": path})
         with self._operation((JobScope(resource, Operation.DATA_STAT),)):
@@ -440,6 +641,7 @@ class RidgeService:
                 raise InvalidPathError("delete requires a relative non-root path")
         return capability
 
+    @_fresh_access
     def delete_data(self, resource: str, path: str, *, recursive: bool = False) -> DeleteResult:
         """Delete an exact entry; recursive trees are non-atomic and never rolled back."""
         target = self._prepare_delete(resource, path, recursive)
@@ -452,6 +654,7 @@ class RidgeService:
                 )
                 raise
 
+    @_fresh_access
     def submit_delete(
         self,
         resource: str,
@@ -503,6 +706,7 @@ class RidgeService:
         )
         return request, scopes
 
+    @_fresh_access
     def copy(
         self, source: str | ResourceLocation, destination: str | ResourceLocation
     ) -> CopyResult:
@@ -510,6 +714,7 @@ class RidgeService:
         with self._operation(scopes):
             return copy(self._registry, request)
 
+    @_fresh_access
     def submit_copy(
         self,
         source: str | ResourceLocation,
@@ -531,15 +736,18 @@ class RidgeService:
             local_only=self._local_scopes(scopes),
         )
 
+    @_fresh_access
     def list_jobs(self, *, limit: int = 50, cursor: str | None = None) -> JobPage:
         """Return authorized summaries, newest first; resume with the page's opaque cursor."""
         return self._job_manager().list(limit=limit, cursor=cursor, allowed=self._job_allowed)
 
+    @_fresh_access
     def inspect_job(self, job_id: str) -> Job:
         job = self._job_manager().get(job_id)
         self._authorize_job(job)
         return job
 
+    @_fresh_access
     def read_job_log(
         self,
         job_id: str,
@@ -559,6 +767,7 @@ class RidgeService:
             limit=limit,
         )
 
+    @_fresh_access
     def cancel_job(self, job_id: str) -> Job:
         job = self.inspect_job(job_id)
         del job

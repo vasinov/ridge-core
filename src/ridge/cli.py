@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from typing import Annotated, ParamSpec, TypeVar, cast
 
 import typer
 
+from ridge._access import ScopeAccessError
+from ridge._scope_wire import (
+    GrantModel,
+    IssuedScopeModel,
+    ScopeModel,
+    ScopePageModel,
+    read_scope_token,
+)
 from ridge.application import RidgeService
 from ridge.config import load_configuration
 from ridge.errors import ExecutionTimeoutError, RidgeError, format_error
@@ -27,6 +36,10 @@ config_app = typer.Typer(
     no_args_is_help=True, help="Check the resource inventory without running it."
 )
 app.add_typer(config_app, name="config")
+scope_app = typer.Typer(no_args_is_help=True, help="Derive, inspect, and revoke task access.")
+app.add_typer(scope_app, name="scope")
+access_app = typer.Typer(no_args_is_help=True, help="Inspect current task authority.")
+app.add_typer(access_app, name="access")
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -36,6 +49,7 @@ _R = TypeVar("_R")
 class _AppState:
     config: Path
     lock_token: str | None = None
+    scope_token: str | None = field(default=None, repr=False)
 
 
 def _handle_errors(function: Callable[_P, _R]) -> Callable[_P, _R]:
@@ -58,6 +72,7 @@ def _handle_errors(function: Callable[_P, _R]) -> Callable[_P, _R]:
 
 
 @app.callback()
+@_handle_errors
 def configure(
     ctx: typer.Context,
     config: Annotated[
@@ -76,14 +91,25 @@ def configure(
             help="Explicit session token for resource operations.",
         ),
     ] = None,
+    scope_token_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--scope-token-file",
+            help="Bind task access from a bearer token file; overrides RIDGE_SCOPE_TOKEN.",
+        ),
+    ] = None,
 ) -> None:
     """Configure the Ridge command invocation."""
-    ctx.obj = _AppState(config=config, lock_token=lock_token)
+    ctx.obj = _AppState(
+        config=config, lock_token=lock_token, scope_token=read_scope_token(scope_token_file)
+    )
 
 
 def _service(ctx: typer.Context) -> RidgeService:
     state = cast(_AppState, ctx.obj)
-    return RidgeService.from_config(state.config).with_lock(state.lock_token)
+    return RidgeService.from_config(state.config, scope_token=state.scope_token).with_lock(
+        state.lock_token
+    )
 
 
 @config_app.command("validate")
@@ -101,6 +127,8 @@ def config_validate(
     """
     state = cast(_AppState, ctx.obj)
     try:
+        if state.scope_token is not None:
+            raise ScopeAccessError("operator_required")
         loaded = load_configuration(state.config)
     except (RidgeError, OSError, ValueError) as exc:
         message = format_error(exc)
@@ -150,6 +178,59 @@ def config_validate(
         typer.echo(f"Permissions: {permission_mode}")
         for resource in resources:
             typer.echo(json.dumps(resource))
+
+
+@scope_app.command("create")
+@_handle_errors
+def scope_create(
+    ctx: typer.Context,
+    grant: Annotated[
+        list[str],
+        typer.Option("--grant", help="JSON resource grant; repeat for multiple resources."),
+    ],
+    expires_at: Annotated[
+        str | None, typer.Option(help="Absolute ISO-8601 expiry with timezone.")
+    ] = None,
+) -> None:
+    grants = [GrantModel.model_validate_json(value).grant() for value in grant]
+    issued = _service(ctx).create_scope(
+        grants, expires_at=datetime.fromisoformat(expires_at) if expires_at else None
+    )
+    typer.echo(
+        IssuedScopeModel(
+            scope=ScopeModel.from_scope(issued.scope), token=issued.token
+        ).model_dump_json()
+    )
+
+
+@scope_app.command("list")
+@_handle_errors
+def scope_list(ctx: typer.Context, cursor: str | None = None, limit: int = 100) -> None:
+    page = _service(ctx).list_scopes(cursor=cursor, limit=limit)
+    typer.echo(
+        ScopePageModel(
+            scopes=[ScopeModel.from_scope(scope) for scope in page.scopes],
+            next_cursor=page.next_cursor,
+        ).model_dump_json()
+    )
+
+
+@scope_app.command("inspect")
+@_handle_errors
+def scope_inspect(ctx: typer.Context, identity: str) -> None:
+    typer.echo(ScopeModel.from_scope(_service(ctx).inspect_scope(identity)).model_dump_json())
+
+
+@scope_app.command("revoke")
+@_handle_errors
+def scope_revoke(ctx: typer.Context, identity: str) -> None:
+    typer.echo(ScopeModel.from_scope(_service(ctx).revoke_scope(identity)).model_dump_json())
+
+
+@access_app.command("inspect")
+@_handle_errors
+def access_inspect(ctx: typer.Context) -> None:
+    typer.echo(json.dumps(_service(ctx).inspect_access()))
 
 
 @locks_app.command("acquire")

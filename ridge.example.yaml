@@ -56,7 +56,7 @@ resources:
 
 # Delegation is independently default-deny, even with unrestricted permissions.
 # Effective delegability also requires the operation to be permitted above.
-# This prepares policy only; scope-bound CLI/MCP workflows are not available yet.
+# Enables scope creation for these operations; children have no redelegation by default.
 # delegation:
 #   project-files:
 #     - data.read

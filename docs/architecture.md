@@ -25,8 +25,9 @@ the same authoritative configuration; resources may span multiple backends.
   errors. Remote command transports compose the shared helper protocol and
   operations rather than duplicate capability semantics.
 - `registry` owns resource identity and lookup.
-- `_access` owns internal persisted task scopes, hashed handles, attenuation,
-  lineage visibility, and scope lifecycle; frontend admission is not yet wired.
+- `_access` owns persisted task scopes, hashed handles, attenuation, lineage
+  visibility, and transactional request checks. `_scope_wire` owns shared CLI/MCP
+  scope transport values and startup token-file/environment parsing.
 - `provider` owns provider registration and installed entry-point discovery.
   `config` validates the inventory envelope and asks the selected provider to
   validate and construct each resource.
@@ -244,16 +245,16 @@ the same authoritative configuration; resources may span multiple backends.
 
 ## Authorization
 
-The [delegated task access design](concepts/authorization.md#delegated-task-access-design)
-records the accepted contract separately from the current
-process-wide policy below. The scope store and delegation configuration are
-implemented internally; scope-bound execution and granular lock footprints are not.
+The [task access contract](concepts/authorization.md#delegated-task-access-design)
+owns operator and scope-bound workflows. Whole-resource scopes are implemented;
+rooted provider views and granular lock footprints remain separate work.
 
 `authorization` owns policy decisions; `application` checks them before invoking
 capabilities through either frontend. Copy checks both endpoints before opening
 either. Requests retain path, key, and argument context, while the built-in policy
 matches exact resource/operation pairs. Tests verify denials and absence of target
-side effects. Discovery and inspection stay outside policy.
+side effects. Operator discovery remains outside use policy; scoped discovery
+filters the registry to the task's granted resource names.
 
 The [authorization guide](concepts/authorization.md) owns grant semantics,
 discovery visibility, and the distinction between support, permission, and
@@ -276,7 +277,10 @@ It rechecks closure after construction without holding a database transaction ac
 provider code. A changed identity can therefore close a scope before even an invalid
 replacement provider or root is constructed. The result still contains the full
 operator inventory: it is preparation for admission, not a filtered service or
-execution authority. Admission must recheck lifecycle in its claim transaction.
+execution authority. The application builds a filtered, request-local service from
+that result. Its request context rechecks lifecycle, effective grants, and lock
+ownership in the claim transaction. Long-lived bound services retain only startup
+binding for subsequent calls, not reusable permission snapshots.
 
 Scope issuance and revocation serialize with `BEGIN IMMEDIATE`. Ancestor closure
 blocks descendants without deleting their history. Observed expiry or resource
@@ -287,9 +291,16 @@ resources. Parent identity checks include resources omitted by a descendant.
 Inspection/listing by active scopes is subtree-only; operator inspection retains
 closed history. Listings use bounded UUID-ordered pages, not snapshots. Internal
 limits are 100 resource grants, 32 scope levels, and 200 records per page. There is
-no retention/deletion API, provider-root narrowing, or frontend/job/lock binding yet.
-Those admission paths must use the same transactional lifecycle checks before
-scoped execution is exposed; an isolated token lookup is not sufficient enforcement.
+no retention/deletion API or provider-root narrowing yet.
+
+Jobs, sessions, and operations persist their issuing access-scope ID. Job insertion,
+scope checks, idempotency lookup, and resource admission serialize in one transaction;
+idempotency keys are partitioned by issuing scope. Operations cannot borrow another
+scope's session token. Visibility requires a live caller and its own subtree;
+closed descendants remain inspectable by authorized ancestors. No bearer handle
+is persisted in a job or lock record. Revocation does not alter admitted jobs or
+settle their claims. Workers retain their admitted request and existing configuration
+and policy checks, independently of later task closure.
 
 ## Durable jobs
 

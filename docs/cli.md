@@ -6,6 +6,11 @@ by MCP. Select the [workspace configuration](configuration.md#workspace) with
 
 ```text
 ridge --config PATH config validate [--json]
+ridge access inspect
+ridge scope create --grant JSON [--grant JSON...] [--expires-at TIMESTAMP]
+ridge scope list [--limit N] [--cursor TOKEN]
+ridge scope inspect ID
+ridge scope revoke ID
 ridge resources
 ridge inspect RESOURCE
 ridge exec RESOURCE -- ARGV...
@@ -32,11 +37,17 @@ Use `ridge COMMAND --help` for frontend options and output details.
 `config validate` uses the runtime loader without constructing the application
 service, probing targets, or creating Ridge state. It reports resolved config/state
 paths, allowed operations, and effective delegable operations; exit `0` means
-valid and `2` reports the first error. Delegation policy validation does not yet
-enable scope-bound CLI/MCP execution.
+valid and `2` reports the first error. It requires operator mode; scope-bound callers
+inspect their effective authority with `access inspect`.
 `--json` emits either a success summary or `{"valid": false, "error": "..."}` on
 stdout. See [configuration validation](configuration.md#validate-an-inventory)
 for the output contract, trusted-provider boundary, and sensitive diagnostics.
+
+Bind a task at startup with `RIDGE_SCOPE_TOKEN` or global `--scope-token-file PATH`
+(the explicit file wins). Scope handles are distinct from lock tokens. Scope
+creation returns its bearer handle once; subsequent inspection omits it.
+See [task delegation](concepts/authorization.md#create-bind-and-close-a-task) for
+structured grants, expiry, reconnect, and revocation.
 
 Configured resource operations automatically claim their resources and exit 2 on
 contention. `locks acquire` returns JSON including a session `id` and secret `token`.

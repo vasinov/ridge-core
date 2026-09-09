@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal, cast
 
+from ridge._access import RequestAccess, ScopeAccessError
 from ridge._job_process import (
     GRACE_SECONDS,
     KILL_SECONDS,
@@ -27,7 +28,7 @@ from ridge._job_process import (
     encode_json,
     timestamp,
 )
-from ridge.coordination import Coordination
+from ridge.coordination import Coordination, read_scopes
 from ridge.errors import JobConflictError, JobNotFoundError, RidgeError
 from ridge.model import Job, JobKind, JobLog, JobPage, JobScope, JobStatus, JobSummary, Operation
 
@@ -50,12 +51,14 @@ class JobManager:
         resource_identities: Mapping[str, str],
         *,
         lock_keys: Mapping[str, str] | None = None,
+        access: RequestAccess | None = None,
     ) -> None:
         self.directory = directory
         self.config_path = config_path
         self.resource_identities = dict(resource_identities)
         self.database = directory / "state.sqlite3"
-        self.coordination = Coordination(directory, lock_keys)
+        self.access = access
+        self.coordination = Coordination(directory, lock_keys, access=access)
 
     def submit(
         self,
@@ -97,9 +100,12 @@ class JobManager:
         try:
             # Serialize the idempotency lookup and insert across concurrent callers.
             connection.execute("BEGIN IMMEDIATE")
+            access = self.access.check(connection, scopes) if self.access else None
+            owner = access.scope.id if access else ""
             if idempotency_key is not None:
                 existing = connection.execute(
-                    "SELECT * FROM jobs WHERE idempotency_key = ?", (idempotency_key,)
+                    "SELECT * FROM jobs WHERE idempotency_key = ? AND access_scope_id = ?",
+                    (idempotency_key, owner),
                 ).fetchone()
                 if existing is not None:
                     if existing["request_digest"] != request_digest:
@@ -131,8 +137,8 @@ class JobManager:
                     INSERT INTO jobs (
                         id, kind, status, scopes_json, request_json, request_digest,
                         config_path, resource_identities_json, payload_path, idempotency_key,
-                        submitted_at, cancellation_requested
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                        submitted_at, cancellation_requested, access_scope_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                     """,
                     (
                         job_id,
@@ -146,6 +152,7 @@ class JobManager:
                         payload_path,
                         idempotency_key,
                         submitted_at,
+                        owner,
                     ),
                 )
                 connection.commit()
@@ -155,6 +162,10 @@ class JobManager:
                         Path(payload_path).unlink(missing_ok=True)
                     job_directory.rmdir()
                 raise
+        except ScopeAccessError as exc:
+            if exc.closes_scope:
+                connection.commit()
+            raise
         finally:
             connection.close()
 
@@ -166,6 +177,7 @@ class JobManager:
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
                 close_fds=True,
+                env={key: value for key, value in os.environ.items() if key != "RIDGE_SCOPE_TOKEN"},
             )
         except OSError as exc:
             self.finish(
@@ -213,7 +225,7 @@ class JobManager:
         try:
             while True:
                 rows = connection.execute(
-                    "SELECT id, kind, status, scopes_json, submitted_at, started_at, finished_at "
+                    "SELECT id, kind, status, scopes_json, submitted_at, started_at, finished_at, access_scope_id "
                     "FROM jobs "
                     + ("WHERE (submitted_at, id) < (?, ?) " if after else "")
                     + "ORDER BY submitted_at DESC, id DESC LIMIT 200",
@@ -222,6 +234,12 @@ class JobManager:
                 for row in rows:
                     summary = self._row_to_summary(row)
                     after = (summary.submitted_at, summary.id)
+                    try:
+                        self._authorize_row(row)
+                    except ScopeAccessError as exc:
+                        if exc.reason not in {"unavailable", "operation_not_allowed"}:
+                            raise
+                        continue
                     if not allowed(summary):
                         continue
                     if len(entries) == limit:
@@ -252,8 +270,28 @@ class JobManager:
         finally:
             connection.close()
         if row is None:
+            if self.access:
+                raise ScopeAccessError("unavailable")
             raise JobNotFoundError(f"unknown job: {job_id}")
+        self._authorize_row(row)
         return self._reconcile(self._row_to_job(row))
+
+    def _authorize_row(
+        self, row: sqlite3.Row, connection: sqlite3.Connection | None = None
+    ) -> None:
+        if self.access is None:
+            return
+        if connection is None:
+            with self.access.store.transaction() as opened:
+                self._authorize_row(row, opened)
+            return
+        self.access.check(
+            connection,
+            read_scopes(row["scopes_json"]),
+            owner=row["access_scope_id"] or None,
+            require_owner=True,
+            supervise=True,
+        )
 
     def read_log(
         self,
@@ -292,12 +330,19 @@ class JobManager:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
             if row is None:
+                if self.access:
+                    raise ScopeAccessError("unavailable")
                 raise JobNotFoundError(f"unknown job: {job_id}")
+            self._authorize_row(row, connection)
             status = JobStatus(row["status"])
             if status in _TERMINAL:
                 return self._row_to_job(row)
             connection.execute("UPDATE jobs SET cancellation_requested = 1 WHERE id = ?", (job_id,))
             connection.commit()
+        except ScopeAccessError as exc:
+            if exc.closes_scope:
+                connection.commit()
+            raise
         finally:
             connection.close()
         # The durable request outlives this caller. Only the owning supervisor
@@ -323,14 +368,16 @@ class JobManager:
                 config_path TEXT NOT NULL,
                 resource_identities_json TEXT NOT NULL,
                 payload_path TEXT,
-                idempotency_key TEXT UNIQUE,
+                idempotency_key TEXT,
                 submitted_at TEXT NOT NULL,
                 started_at TEXT,
                 finished_at TEXT,
                 pid INTEGER,
                 error TEXT,
                 result_json TEXT,
-                cancellation_requested INTEGER NOT NULL
+                cancellation_requested INTEGER NOT NULL,
+                access_scope_id TEXT NOT NULL DEFAULT '',
+                UNIQUE (idempotency_key, access_scope_id)
             )
             """
         )
@@ -348,7 +395,11 @@ class JobManager:
         finally:
             connection.close()
         for row in identities:
-            self.get(row["job_id"])
+            try:
+                self.get(row["job_id"])
+            except ScopeAccessError as exc:
+                if exc.reason not in {"unavailable", "operation_not_allowed"}:
+                    raise
 
     def finish(
         self,

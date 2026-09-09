@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
 
+from ridge._access import RequestAccess, ScopeAccessError
 from ridge.errors import LockConflictError, LockOwnershipError
 from ridge.model import JobScope, Operation
 
@@ -28,10 +29,17 @@ def read_scopes(value: str) -> tuple[JobScope, ...]:
 
 
 class Coordination:
-    def __init__(self, directory: Path, keys: Mapping[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        keys: Mapping[str, str] | None = None,
+        *,
+        access: RequestAccess | None = None,
+    ) -> None:
         self.directory = directory
         self.database = directory / "state.sqlite3"
         self.keys = dict(keys or {})
+        self.access = access
 
     def connect(self) -> sqlite3.Connection:
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -42,13 +50,14 @@ class Coordination:
             CREATE TABLE IF NOT EXISTS lock_sessions (
                 id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL,
                 scopes_json TEXT NOT NULL, claims_json TEXT NOT NULL,
-                status TEXT NOT NULL, expires_at REAL NOT NULL, lease_seconds REAL NOT NULL
+                status TEXT NOT NULL, expires_at REAL NOT NULL, lease_seconds REAL NOT NULL,
+                access_scope_id TEXT
             );
             CREATE TABLE IF NOT EXISTS lock_operations (
                 id TEXT PRIMARY KEY, session_id TEXT, job_id TEXT,
                 scopes_json TEXT NOT NULL, claims_json TEXT NOT NULL,
                 status TEXT NOT NULL, local_only INTEGER NOT NULL,
-                reason TEXT
+                reason TEXT, access_scope_id TEXT
             );
             CREATE INDEX IF NOT EXISTS lock_operations_session ON lock_operations(session_id);
         """)
@@ -60,7 +69,12 @@ class Coordination:
         try:
             connection.execute("BEGIN IMMEDIATE")
             self.reconcile(connection)
-            yield connection
+            try:
+                yield connection
+            except ScopeAccessError as exc:
+                if exc.closes_scope:
+                    connection.commit()
+                raise
             connection.commit()
         finally:
             connection.close()
@@ -118,13 +132,14 @@ class Coordination:
                     # Do not disclose another inventory's resource names or operation IDs.
                     raise LockConflictError("resource claims conflict with existing ownership")
 
-    @staticmethod
-    def _session(connection: sqlite3.Connection, token: str) -> sqlite3.Row:
+    def _session(self, connection: sqlite3.Connection, token: str) -> sqlite3.Row:
         row = connection.execute(
             "SELECT * FROM lock_sessions WHERE token_hash = ?",
             (hashlib.sha256(token.encode()).hexdigest(),),
         ).fetchone()
         if row is None:
+            if self.access:
+                raise ScopeAccessError("unavailable")
             raise LockOwnershipError("unknown lock token")
         return row
 
@@ -147,12 +162,13 @@ class Coordination:
         while True:
             try:
                 with self.transaction() as connection:
+                    access = self.access.check(connection, scopes) if self.access else None
                     claims = self.claims(scopes)
                     self._check(connection, claims, None)
                     token = secrets.token_urlsafe(32)
                     identity = str(uuid.uuid4())
                     connection.execute(
-                        "INSERT INTO lock_sessions VALUES (?, ?, ?, ?, 'open', ?, ?)",
+                        "INSERT INTO lock_sessions VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
                         (
                             identity,
                             hashlib.sha256(token.encode()).hexdigest(),
@@ -160,6 +176,7 @@ class Coordination:
                             json.dumps(claims),
                             time.time() + lease_seconds,
                             lease_seconds,
+                            access.scope.id if access else None,
                         ),
                     )
                     row = connection.execute(
@@ -175,6 +192,13 @@ class Coordination:
     def session_action(self, token: str, *, release: bool = False) -> dict[str, object]:
         with self.transaction() as connection:
             row = self._session(connection, token)
+            if self.access:
+                self.access.check(
+                    connection,
+                    read_scopes(row["scopes_json"]) if not release else (),
+                    owner=row["access_scope_id"],
+                    require_owner=True,
+                )
             if release:
                 connection.execute(
                     "UPDATE lock_sessions SET status = 'closing' WHERE id = ? AND status = 'open'",
@@ -204,11 +228,14 @@ class Coordination:
         local_only: bool,
         job_id: str | None = None,
     ) -> None:
+        access = self.access.check(connection, scopes) if self.access else None
         self.reconcile(connection)
         claims = self.claims(scopes)
         session: str | None = None
         if token is not None:
             row = self._session(connection, token)
+            if self.access:
+                self.access.check(connection, owner=row["access_scope_id"], require_owner=True)
             if row["status"] != "open":
                 raise LockOwnershipError("session is closed or expired; acquire a new session")
             declared = read_scopes(row["scopes_json"])
@@ -223,7 +250,7 @@ class Coordination:
             session = row["id"]
         self._check(connection, claims, session)
         connection.execute(
-            "INSERT INTO lock_operations VALUES (?, ?, ?, ?, ?, 'active', ?, NULL)",
+            "INSERT INTO lock_operations VALUES (?, ?, ?, ?, ?, 'active', ?, NULL, ?)",
             (
                 identity,
                 session,
@@ -231,6 +258,7 @@ class Coordination:
                 json.dumps(scopes_value(scopes)),
                 json.dumps(claims),
                 int(local_only),
+                access.scope.id if access else None,
             ),
         )
         if session is not None:
@@ -263,7 +291,7 @@ class Coordination:
             try:
                 with self.transaction() as connection:
                     self.admit(connection, identity, scopes, token=token, local_only=local_only)
-            except (LockConflictError, LockOwnershipError):
+            except (LockConflictError, LockOwnershipError, ScopeAccessError):
                 # Rejected identities were never published to observers.
                 owner_path.unlink(missing_ok=True)
                 raise
@@ -299,6 +327,7 @@ class Coordination:
             "status": row["status"],
             "scopes": json.loads(row["scopes_json"]),
             "claims": json.loads(row["claims_json"]),
+            "access_scope_id": row["access_scope_id"],
         }
         if kind == "session":
             result.update(expires_at=row["expires_at"], lease_seconds=row["lease_seconds"])
@@ -313,12 +342,24 @@ class Coordination:
                     f"SELECT * FROM {table} WHERE id = ?", (identity,)
                 ).fetchone()
                 if row is not None:
+                    if self.access:
+                        self.access.check(
+                            connection,
+                            owner=row["access_scope_id"],
+                            require_owner=True,
+                            supervise=True,
+                        )
                     return self.view(row, kind)
+        if self.access:
+            raise ScopeAccessError("unavailable")
         raise LockOwnershipError("unknown lock identity")
 
     def token_scopes(self, token: str) -> tuple[JobScope, ...]:
         with self.transaction() as connection:
-            return read_scopes(self._session(connection, token)["scopes_json"])
+            row = self._session(connection, token)
+            if self.access:
+                self.access.check(connection, owner=row["access_scope_id"], require_owner=True)
+            return read_scopes(row["scopes_json"])
 
     def validate_job(self, identity: str, scopes: Sequence[JobScope]) -> None:
         with self.transaction() as connection:
@@ -341,6 +382,14 @@ class Coordination:
             ).fetchone()
             if row is None or row["status"] != "uncertain":
                 raise LockOwnershipError("force-release requires an uncertain operation identity")
+            if self.access:
+                self.access.check(
+                    connection,
+                    read_scopes(row["scopes_json"]),
+                    owner=row["access_scope_id"],
+                    require_owner=True,
+                    supervise=True,
+                )
             self.finish(connection, identity, safe=True, reason="force-released: " + reason)
 
     def page(self, *, after: str = "", limit: int = 100) -> list[dict[str, object]]:

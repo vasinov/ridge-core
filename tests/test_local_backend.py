@@ -129,3 +129,29 @@ def test_exec_start_failure_is_a_ridge_error(tmp_path: Path) -> None:
 
     with pytest.raises(ExecutionError, match="cannot start command"):
         resource.exec(["definitely-not-a-ridge-test-executable"])
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_compute_does_not_inherit_frontend_scope_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, streaming: bool
+) -> None:
+    monkeypatch.setenv("RIDGE_SCOPE_TOKEN", "ambient-handle")
+    resource = LocalResource("local", tmp_path)
+    argv = [sys.executable, "-c", "import os; print(os.environ.get('RIDGE_SCOPE_TOKEN', 'absent'))"]
+    for explicit, expected in (
+        (None, b"absent\n"),
+        ({"RIDGE_SCOPE_TOKEN": "explicit"}, b"explicit\n"),
+    ):
+        if streaming:
+            with (
+                (tmp_path / "stdout").open("w+b") as stdout,
+                (tmp_path / "stderr").open("w+b") as stderr,
+            ):
+                result = resource.exec_streaming(argv, stdout, stderr, env=explicit)
+                stdout.seek(0)
+                content = stdout.read()
+        else:
+            result = resource.exec(argv, env=explicit)
+            content = result.stdout
+        assert result.exit_code == 0
+        assert content == expected

@@ -276,6 +276,7 @@ class LocalResource(_InspectableResource):
         if not working_directory.is_dir():
             raise PathTypeError(f"working directory is not a directory: {cwd}")
         process_env = os.environ.copy()
+        process_env.pop("RIDGE_SCOPE_TOKEN", None)
         if env is not None:
             process_env.update(env)
         started = time.monotonic()
@@ -322,6 +323,7 @@ class LocalResource(_InspectableResource):
         if not working_directory.is_dir():
             raise PathTypeError(f"working directory is not a directory: {cwd}")
         process_env = os.environ.copy()
+        process_env.pop("RIDGE_SCOPE_TOKEN", None)
         if env is not None:
             process_env.update(env)
         started = time.monotonic()

@@ -151,6 +151,11 @@ async def test_server_declares_explicit_tools_and_annotations(tmp_path: Path) ->
 
     tools = {tool.name: tool for tool in listing.tools}
     assert set(tools) == {
+        "create_scope",
+        "list_scopes",
+        "inspect_scope",
+        "revoke_scope",
+        "inspect_access",
         "acquire_locks",
         "renew_locks",
         "release_locks",

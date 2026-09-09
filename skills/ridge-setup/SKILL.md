@@ -1,6 +1,6 @@
 ---
 name: ridge-setup
-description: Prepare or update a Ridge YAML resource inventory from a user's workflow, explain explicit access, and validate it using installed Ridge. Use for Ridge setup and configuration repair, not infrastructure provisioning or routine resource operations.
+description: Prepare or repair a Ridge workspace configuration, validate explicit access, or derive and bind delegated task scopes using installed Ridge. Use for setup and task-access handoff, not infrastructure provisioning or routine resource operations.
 ---
 
 # Ridge setup
@@ -10,8 +10,9 @@ configuration: resource inventory, permission policy, and managed state. Ridge
 must already be installed, and you need host file access; Ridge MCP cannot edit
 its own configuration. Do not assume access to a Ridge source checkout.
 Workspace is the name for these existing parts, not a new file format or directory
-layout. Keep participating callers on the chosen configuration and state; do not
-create a separate inventory per child or invent delegated-scope commands.
+layout. Keep participating callers on the chosen configuration and state. Prefer
+deriving access in an existing workspace over editing operator policy or creating
+an inventory per child.
 
 ## Establish the workflow
 
@@ -84,10 +85,9 @@ excerpts, or provider text, so review before quoting them.
 Review resolved config/state paths and each resource's effective allowed operations
 against the request. When preparing delegation policy is requested, review
 `delegable_operations` too: `delegation` is separately default-deny and is intersected
-with ordinary permissions. Do not add delegation grants for routine setup or mistake
-that validation field for an available scope-binding workflow. Consult the installed
-CLI and authorization documentation before attempting delegation; the internal store
-is not a substitute for frontend enforcement.
+with ordinary permissions. Do not add delegation grants for routine setup.
+Configuration validation requires operator mode; already-bound tasks use
+`ridge access inspect` or MCP `inspect_access` to inspect their authority.
 
 Explain what remains unverified. Run a small real workflow
 only when its targets and effects are authorized; use an empty disposable scope
@@ -99,3 +99,33 @@ Hand off the config path, concise diff/access summary, validation result, and an
 smoke-test outcome or gap. For an MCP launch, supply absolute executable and config
 paths (`ridge-mcp --config /absolute/path/to/ridge.yaml`); client-specific connection
 steps are separate. Do not modify agent-client settings unless requested.
+
+## Derive and hand off task access
+
+Read the installed [delegation contract](https://vasinov.github.io/ridge-core/concepts/authorization/#create-bind-and-close-a-task)
+and inspect effective access first. Confirm which resources and operations the
+child needs. A missing delegation grant is an operator decision, not permission to
+edit YAML, clear a binding, or retry as operator. Supported scopes currently select
+whole named resources; narrower root requests must not be approximated with broader
+grants.
+
+Use `ridge scope create --grant '{"resource":"inputs","operations":["data.read","data.stat"]}'`
+or MCP `create_scope(grants=[...])`, against the selected workspace. Add
+`delegation` only when this child must derive further scopes. MCP inline reads need
+both read and stat. Use optional absolute expiry when appropriate; task completion
+still calls for explicit revocation.
+
+Creation returns a `scope.id` and a bearer `token` once. Have the host bind a separate
+child CLI/MCP process using `RIDGE_SCOPE_TOKEN` or `--scope-token-file PATH`; never
+put the token in the child's prompt or per-tool arguments. Explicit files override
+environment binding and are read at startup. Protect token files and transcripts;
+do not include handles in a handoff summary. Harness-specific spawning and connection
+configuration belong to that harness's integration guidance, not to Ridge policy.
+
+In the child connection, call `access inspect`/`inspect_access` and verify the
+expected scope ID and effective grants before work. Reconnect with that same handle
+for ongoing tasks; do not recreate scopes just because a connection ended. Use
+scope IDs for inspection and revocation. On completion, the parent revokes the task.
+Revocation blocks access but does not cancel running jobs or release held locks;
+inspect/cancel work and close reservations separately when required. Do not clear an
+invalid or closed binding to regain operator access.

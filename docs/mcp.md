@@ -4,6 +4,14 @@
 over local stdio using the official MCP Python SDK. Point participating clients
 at the same configuration to share policy and managed state. It has no network listener.
 
+For delegated tasks, start a separate connection/process with `RIDGE_SCOPE_TOKEN`
+or `--scope-token-file PATH`. The handle is captured at startup, while authority is
+rechecked for each call. Never pass access handles as individual tool arguments.
+`inspect_access`, `create_scope`, `list_scopes`, `inspect_scope`, and `revoke_scope`
+share the [task delegation contract](concepts/authorization.md#create-bind-and-close-a-task)
+with CLI/Python. `create_scope` accepts a list of structured resource grants and
+optional absolute `expires_at`; only its result includes the new bearer token.
+
 For Codex, configure absolute paths:
 
 ```toml
@@ -13,6 +21,23 @@ args = ["--config", "/path/to/ridge.yaml"]
 required = true
 default_tools_approval_mode = "writes"
 ```
+
+For a delegated Codex process, the host supplies that child's `RIDGE_SCOPE_TOKEN`
+and adds `env_vars = ["RIDGE_SCOPE_TOKEN"]` to this MCP server configuration.
+Alternatively, append `--scope-token-file` and an absolute protected token-file
+path to `args`. Use a distinct process/connection per child and verify its expected
+scope ID with `inspect_access`; a shared operator connection does not become
+scoped because the prompt names a child. Reconnect with the same handle for an
+ongoing task.
+
+A programmable host can use `codex exec` with process-local `-c` MCP overrides;
+`--ephemeral --ignore-user-config` avoids retained rollout history and unrelated
+user configuration for a disposable acceptance run. The host still owns spawning,
+credentials, approvals, and cleanup. See Codex's
+[MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) and
+[non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode).
+This workflow has been exercised with separate Codex CLI processes; desktop UI
+and other harness-specific delegation workflows are not yet verified.
 
 The server provides explicit tools for discovery, inspection, execution,
 data operations (`list_data`, `read_data`, `write_data`, `stat_data`, `delete_data`), copy,

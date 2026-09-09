@@ -15,7 +15,7 @@ effective operation
 
 Policy semantics:
 
-- one operator-selected policy per Ridge process, without users or roles;
+- one operator-selected workspace policy, optionally narrowed by a task scope;
 - unrestricted trusted mode when no policy exists;
 - default-deny, exact resource-and-operation grants when a policy exists;
 - no path globs, conditions, ownership, inheritance, or explicit deny rules;
@@ -23,7 +23,7 @@ Policy semantics:
 - source `data.read` and destination `data.write` authorization before
   either side of a copy is opened.
 
-Resource discovery and inspection remain outside policy. They report every
+In operator mode, resource discovery and inspection remain outside policy. They report every
 configured resource, its supported operations, its policy-allowed operations,
 and provider inspection properties. Clients able to reach a Ridge frontend can
 therefore see this configuration metadata.
@@ -36,8 +36,8 @@ grant the needed data operations and omit `compute.exec`. Explicit deletion need
 `data.delete`; withholding it does not prevent removal through whole-tree
 replacement or arbitrary execution. Recursion is an operation parameter, not a grant.
 
-CLI and local stdio do not establish independent caller identities; grants apply
-to the process's selected policy, not to individual agents.
+CLI and local stdio bind to operator authority unless started with a task handle.
+A handle identifies task authority, not a permanent user or agent identity.
 
 An MCP host's tool approval is another independent gate before Ridge. If the
 host refuses a tool call, Ridge never receives an authorization request. Testing
@@ -57,11 +57,65 @@ enforces the restriction.
 
 ## Delegated task access design
 
-This section describes the accepted workflow, not an available frontend API.
-The internal scope store and operator `delegation` policy are implemented, but
-CLI/MCP still use the process-wide policy above. There are no scope creation or
-binding commands yet. Existing lock tokens establish reservation ownership,
-not delegation. Do not use the internal store as an execution authorization wrapper.
+CLI, MCP, and Python support durable task scopes over whole named resources.
+Narrower data roots remain planned: unsupported grant fields are rejected, never
+silently treated as whole-resource access. Lock tokens establish reservation
+ownership, not delegation.
+
+### Create, bind, and close a task
+
+The operator explicitly enables [delegation](../configuration.md#delegation-policy):
+
+```yaml
+permissions:
+  inputs: [data.read, data.stat]
+delegation:
+  inputs: [data.read, data.stat]
+```
+
+Create a read-only task, with no further delegation:
+
+```bash
+ridge --config ridge.yaml scope create \
+  --grant '{"resource":"inputs","operations":["data.read","data.stat"]}'
+```
+
+The JSON result contains `scope` metadata and a secret `token`, returned only
+once. Pass that token to the child process as `RIDGE_SCOPE_TOKEN`, or place only
+the token in a protected file and launch:
+
+```bash
+ridge --config ridge.yaml --scope-token-file /private/task.token access inspect
+ridge-mcp --config ridge.yaml --scope-token-file /private/task.token
+```
+
+An explicit token file overrides the environment. Its content is read once at
+startup; replacing the file does not rebind a running MCP connection. Empty,
+invalid, expired, revoked, and wrong-workspace tokens fail closed. They never
+select operator mode. Do not put handles in prompts, committed files, or per-tool
+arguments. MCP creation returns the handle to its host, so protect host transcripts.
+
+`access inspect` reports effective use and delegation grants. `scope list`,
+`scope inspect ID`, and `scope revoke ID` inspect or close visible task scopes.
+Creation accepts repeated `--grant` JSON objects, optional `--expires-at` with an
+absolute timezone-aware timestamp, and an explicit `delegation` operation list
+inside each grant when further derivation is needed. Omitting child expiry
+inherits its parent's bound. Each resource appears at most once per scope.
+The equivalent MCP tools are `inspect_access`, `create_scope`, `list_scopes`,
+`inspect_scope`, and `revoke_scope`.
+
+Clients can reconnect with the same handle while the task remains active.
+Close it explicitly on task completion. A parent can revoke a descendant without
+its bearer handle. Revocation blocks new work and result access, but does not
+cancel admitted jobs or release outstanding resource reservations.
+
+Scoped discovery exposes only granted resource names. Scope and job history is
+subtree-only; siblings and operator-owned jobs remain hidden. Job observation
+currently also requires the underlying use grants. Idempotency keys are local to
+the submitting scope, so two children can use the same key independently.
+Scoped lock tokens can be used or renewed only by their owning scope. Parents
+can inspect descendant claims; operator recovery remains available. `config validate`
+is an operator workflow; scoped callers use `access inspect` instead.
 
 ### Accepted direction
 
@@ -89,9 +143,8 @@ Neither child names nor task IDs create independent locks or state directories.
 
 ### Accepted first implementation
 
-The following choices define the initial scope implementation. Frontend binding,
-rooted views, and job/lock lineage filtering remain planned; resource-level
-configuration checks are already used by background jobs.
+The following choices define the scope contract. Rooted views remain planned;
+whole-resource scopes and frontend/job/lock binding are implemented.
 
 - **Authority and binding:** persist scope records in the workspace's local state;
   bind each CLI/MCP client to one opaque scope handle at startup. Invalid, expired,
@@ -133,8 +186,8 @@ Keep resource names unchanged, with one view per resource per scope. The
 [`delegation` map](../configuration.md#delegation-policy) is an explicit operator
 ceiling, separate from ordinary permissions; omission disables delegation.
 
-The existing `ridge-setup` skill will cover access inspection, derivation, child
-binding, reconnect, and task closure when these commands land. Prefer deriving
+The existing `ridge-setup` skill covers access inspection, derivation, child
+binding, reconnect, and task closure. Prefer deriving
 access in an existing workspace over editing operator configuration. Ridge owns
 enforcement, docs own the complete contract, and harness integration instructions
 own spawning and connection setup. Plugin packaging reuses the skill and installed

@@ -1,5 +1,11 @@
 # Background jobs
 
+For [delegated tasks](../concepts/authorization.md#create-bind-and-close-a-task),
+job ownership and idempotency keys belong to the submitting access scope. A caller
+sees only its own subtree and must retain the job's underlying operation grants.
+Closing a scope blocks its future submissions and result access, not work already
+admitted; an authorized ancestor can inspect or cancel descendant jobs separately.
+
 Execution, data writes, deletion, and copy can run as durable
 background jobs. The operation itself remains in its ordinary CLI command or
 MCP tool; the `jobs` namespace is only for lifecycle management. Jobs belong to

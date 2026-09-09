@@ -53,6 +53,14 @@ remain until active operations finish. Idle sessions are reclaimed on subsequent
 requests without a daemon. Release using the token remains possible after grants
 change. Tokens are returned only at acquisition and stored as hashes.
 
+When using [task access](../concepts/authorization.md#create-bind-and-close-a-task),
+sessions and operations belong to the bound scope. Only that scope can use or
+renew its session token; it does not transfer authority to another child. Scoped
+inspection/listing shows only the caller's subtree and still checks operation
+grants. Scope closure stops admission and renewal but does not release outstanding
+reservations; admitted work, idle lease expiry, and explicit operator recovery
+retain their normal semantics. Access-scope IDs appear in lock inspection.
+
 Pure request checks run before admission: an equal-location copy rejection creates
 neither an operation claim nor a background job. Once backend dispatch begins,
 an error alone does not prove absence of effects or safe release.

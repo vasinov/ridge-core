@@ -4,6 +4,7 @@ import base64
 import binascii
 from collections.abc import Callable, Sequence
 from dataclasses import asdict
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from typing import Annotated, Literal, ParamSpec, TypeVar
@@ -14,6 +15,14 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict
 
+from ridge._scope_wire import (
+    AccessModel,
+    GrantModel,
+    IssuedScopeModel,
+    ScopeModel,
+    ScopePageModel,
+    read_scope_token,
+)
 from ridge.application import RidgeService
 from ridge.errors import RidgeError, format_error
 from ridge.model import CopyResult as DomainCopyResult
@@ -154,6 +163,7 @@ class LockResult(_WireModel):
     status: Literal["open", "closing", "active", "uncertain", "released"]
     scopes: list[JobScopeResult]
     claims: dict[str, Literal["shared", "exclusive"]]
+    access_scope_id: str | None = None
     expires_at: float | None = None
     lease_seconds: float | None = None
     session_id: str | None = None
@@ -717,7 +727,49 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         """Release uncertain operation claims after external inspection; does not cancel work."""
         return LockResult.model_validate(service.force_release_lock(identity, reason=reason))
 
+    @server.tool(annotations=_WRITE, structured_output=True)
+    @_tool_errors
+    def create_scope(
+        grants: list[GrantModel], expires_at: datetime | None = None
+    ) -> IssuedScopeModel:
+        """Derive child task access; returns its bearer handle once, without acquiring locks."""
+        issued = service.create_scope([grant.grant() for grant in grants], expires_at=expires_at)
+        return IssuedScopeModel(scope=ScopeModel.from_scope(issued.scope), token=issued.token)
+
+    @server.tool(annotations=_READ_ONLY, structured_output=True)
+    @_tool_errors
+    def list_scopes(cursor: str | None = None, limit: int = 100) -> ScopePageModel:
+        """List this task's scope subtree; never includes bearer handles."""
+        page = service.list_scopes(cursor=cursor, limit=limit)
+        return ScopePageModel(
+            scopes=[ScopeModel.from_scope(scope) for scope in page.scopes],
+            next_cursor=page.next_cursor,
+        )
+
+    @server.tool(annotations=_READ_ONLY, structured_output=True)
+    @_tool_errors
+    def inspect_scope(identity: str) -> ScopeModel:
+        """Inspect issued grants and lifecycle of a visible task scope."""
+        return ScopeModel.from_scope(service.inspect_scope(identity))
+
+    @server.tool(annotations=_WRITE, structured_output=True)
+    @_tool_errors
+    def revoke_scope(identity: str) -> ScopeModel:
+        """Close task/subtree access, not its running jobs or outstanding locks."""
+        return ScopeModel.from_scope(service.revoke_scope(identity))
+
+    @server.tool(annotations=_READ_ONLY, structured_output=True)
+    @_tool_errors
+    def inspect_access() -> AccessModel:
+        """Inspect this connection's effective use and delegation grants."""
+        return AccessModel.model_validate(service.inspect_access())
+
     _registered_tools = (
+        create_scope,
+        list_scopes,
+        inspect_scope,
+        revoke_scope,
+        inspect_access,
         acquire_locks,
         renew_locks,
         release_locks,
@@ -756,9 +808,21 @@ def serve(
         Path,
         typer.Option("--config", envvar="RIDGE_CONFIG", help="Resource configuration."),
     ] = Path("ridge.yaml"),
+    scope_token_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--scope-token-file",
+            help="Bind task access from a token file; overrides RIDGE_SCOPE_TOKEN.",
+        ),
+    ] = None,
 ) -> None:
     """Run the Ridge MCP server over stdio."""
-    create_server(RidgeService.from_config(config)).run()
+    try:
+        service = RidgeService.from_config(config, scope_token=read_scope_token(scope_token_file))
+    except (RidgeError, OSError, ValueError) as exc:
+        typer.echo(f"ridge-mcp: {format_error(exc)}", err=True)
+        raise typer.Exit(code=2) from exc
+    create_server(service).run()
 
 
 def main(argv: Sequence[str] | None = None) -> None:

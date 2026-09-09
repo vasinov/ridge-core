@@ -1,5 +1,6 @@
 """Ridge's public Python API."""
 
+from ridge._access import AccessGrant, IssuedScope, ScopeAccessError, ScopeInfo, ScopePage
 from ridge.application import RidgeService
 from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Authorizer
 from ridge.config import LoadedConfiguration, load_configuration, load_registry
@@ -33,6 +34,7 @@ from ridge.resource import (
 from ridge.sessions import ManagedMCPSession, ManagedSession
 
 __all__ = [
+    "AccessGrant",
     "AuthorizationDeniedError",
     "AuthorizationPolicy",
     "AuthorizationRequest",
@@ -41,6 +43,7 @@ __all__ = [
     "DeleteCapability",
     "DeleteResult",
     "FilesystemCapability",
+    "IssuedScope",
     "Job",
     "JobKind",
     "JobLog",
@@ -63,6 +66,9 @@ __all__ = [
     "ResourceRegistry",
     "RidgeError",
     "RidgeService",
+    "ScopeAccessError",
+    "ScopeInfo",
+    "ScopePage",
     "StorageCapability",
     "StreamingComputeCapability",
     "TransferCapability",
