@@ -57,9 +57,11 @@ enforces the restriction.
 
 ## Delegated task access design
 
-This section describes planned behavior, not an available API. Current releases
-use the process-wide policy above; there are no access-scope creation commands or
-access tokens. Existing lock tokens establish reservation ownership, not delegation.
+This section describes the accepted workflow, not an available frontend API.
+The internal scope store and operator `delegation` policy are implemented, but
+CLI/MCP still use the process-wide policy above. There are no scope creation or
+binding commands yet. Existing lock tokens establish reservation ownership,
+not delegation. Do not use the internal store as an execution authorization wrapper.
 
 ### Accepted direction
 
@@ -87,15 +89,18 @@ Neither child names nor task IDs create independent locks or state directories.
 
 ### Accepted first implementation
 
-The following choices define the initial scope implementation. The scope API is
-still planned; resource-level configuration checks are already used by background jobs.
+The following choices define the initial scope implementation. Frontend binding,
+rooted views, and job/lock lineage filtering remain planned; resource-level
+configuration checks are already used by background jobs.
 
 - **Authority and binding:** persist scope records in the workspace's local state;
   bind each CLI/MCP client to one opaque scope handle at startup. Invalid, expired,
   or revoked handles fail closed rather than falling back to operator access.
   Keep one coordination host and existing transports initially, without a daemon
-  or hosted team service. Settle handle transport/storage and workspace identity
-  before defining the wire API.
+  or hosted team service. Return bearer handles once, persist only their hashes,
+  and pass them through `RIDGE_SCOPE_TOKEN` or a startup token-file option, never
+  individual tool arguments. Bind workspace identity to the resolved configuration
+  path and state directory; moving either requires fresh delegation.
 - **Derivation:** start with subsets of named resources and exact operations,
   plus rooted data views where the provider can validate narrowing. Keep arbitrary
   compute resource-wide. No redelegation by default; when permitted,
@@ -120,6 +125,20 @@ still planned; resource-level configuration checks are already used by backgroun
   semantic equivalence. Scope identity includes its workspace, not just a resource
   name. Background jobs use the same resource-level semantic checks before execution;
   already-running operations retain their admitted configuration.
+
+The approved frontend shape is `scope create/list/inspect/revoke` and
+`access inspect`, with equivalent MCP tools. Creation takes structured resource
+grants, optional narrower data roots, expiry, and explicit redelegation grants.
+Keep resource names unchanged, with one view per resource per scope. The
+[`delegation` map](../configuration.md#delegation-policy) is an explicit operator
+ceiling, separate from ordinary permissions; omission disables delegation.
+
+The existing `ridge-setup` skill will cover access inspection, derivation, child
+binding, reconnect, and task closure when these commands land. Prefer deriving
+access in an existing workspace over editing operator configuration. Ridge owns
+enforcement, docs own the complete contract, and harness integration instructions
+own spawning and connection setup. Plugin packaging reuses the skill and installed
+MCP server; it does not implement authorization.
 
 The reference scenario is a persistent Ridge host connecting a caller to a remote
 worker and separate input/result resources. A client can disconnect while an

@@ -46,6 +46,8 @@ def test_validation_summary_matches_loader_without_runtime_effects(
 permissions:
   local: [data.read, data.stat]
   s3: [data.delete]
+delegation:
+  local: [data.read, data.write]
 state: {directory: state-not-created}
 """
     )
@@ -79,7 +81,18 @@ state: {directory: state-not-created}
             if loaded.authorization.allows(name, op)
         ]
         assert item["lock_key"] == loaded.lock_keys[name]
-        assert set(item) == {"name", "provider", "lock_key", "allowed_operations"}
+        assert item["delegable_operations"] == [
+            op.value
+            for op in loaded.registry.get(name).capabilities.operations
+            if loaded.authorization.allows(name, op) and loaded.delegation.allows(name, op)
+        ]
+        assert set(item) == {
+            "name",
+            "provider",
+            "lock_key",
+            "allowed_operations",
+            "delegable_operations",
+        }
     assert "do-not-echo-this" not in result.stdout
     assert list(tmp_path.iterdir()) == [config]
     assert config.read_bytes() == before

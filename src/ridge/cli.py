@@ -122,6 +122,12 @@ def config_validate(
                 for operation in loaded.registry.get(name).capabilities.operations
                 if loaded.authorization.allows(name, operation)
             ],
+            "delegable_operations": [
+                operation.value
+                for operation in loaded.registry.get(name).capabilities.operations
+                if loaded.authorization.allows(name, operation)
+                and loaded.delegation.allows(name, operation)
+            ],
         }
         for name in loaded.registry.names()
     ]

@@ -11,6 +11,50 @@ from ridge.errors import ConfigurationError
 from ridge.model import Operation
 
 
+def test_delegation_defaults_deny_without_changing_use(tmp_path: Path) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text("resources: {data: {provider: local}}")
+    loaded = load_configuration(config)
+    assert loaded.authorization.allows("data", Operation.DATA_WRITE)
+    assert not loaded.delegation.allows("data", Operation.DATA_WRITE)
+    config.write_text("resources: {data: {provider: local}}\ndelegation: {data: [data.read]}")
+    delegated = load_configuration(config)
+    assert delegated.delegation.allows("data", Operation.DATA_READ)
+    assert not delegated.delegation.allows("data", Operation.DATA_WRITE)
+    assert delegated.authorization.allows("data", Operation.DATA_WRITE)
+    assert delegated.resource_identities == loaded.resource_identities
+    assert not (tmp_path / ".ridge").exists()
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        "null",
+        "[]",
+        "{missing: [data.read]}",
+        "{data: [unknown]}",
+        "{data: [data.read, data.read]}",
+        "{data: [false]}",
+        "{data: data.read}",
+    ],
+)
+def test_invalid_delegation_policy(tmp_path: Path, policy: str) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text(f"resources: {{data: {{provider: local}}}}\ndelegation: {policy}")
+    with pytest.raises(ConfigurationError):
+        load_configuration(config)
+    assert not (tmp_path / ".ridge").exists()
+
+
+def test_delegation_cannot_name_unsupported_operation(tmp_path: Path) -> None:
+    config = tmp_path / "ridge.yaml"
+    config.write_text(
+        "resources: {data: {provider: s3, bucket: example}}\ndelegation: {data: [compute.exec]}"
+    )
+    with pytest.raises(ConfigurationError, match="does not support"):
+        load_configuration(config)
+
+
 def test_identity_mismatch_precedes_provider_discovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -81,12 +81,14 @@ not sandboxed and may have their own side effects.
 
 The success summary shows resolved configuration and state paths, permission mode
 (`exact` or `unrestricted`), and each resource's name, provider, lock key, and
-effective allowed operations. It does not dump raw YAML or resource properties.
+effective allowed and delegable operations. Delegability is the intersection of
+`permissions` and `delegation`; it does not enable scope-bound frontend calls yet.
+The summary does not dump raw YAML or resource properties.
 Text success goes to stdout; text errors go to stderr. `--json` emits one object
 on stdout for either outcome:
 
 ```json
-{"valid": true, "config": "/project/ridge.yaml", "state_directory": "/project/.ridge", "permission_mode": "exact", "resources": [{"name": "inputs", "provider": "local", "lock_key": "inputs", "allowed_operations": ["data.read", "data.stat"]}]}
+{"valid": true, "config": "/project/ridge.yaml", "state_directory": "/project/.ridge", "permission_mode": "exact", "resources": [{"name": "inputs", "provider": "local", "lock_key": "inputs", "allowed_operations": ["data.read", "data.stat"], "delegable_operations": []}]}
 ```
 
 Failures have `valid: false` and an `error` string instead of a partial inventory.
@@ -160,6 +162,27 @@ Permissions apply to operations performed through Ridge. Resource discovery and
 inspection remain available and expose configured properties plus supported and
 allowed operations. See [Authorization](concepts/authorization.md) for enforcement
 and the relationship to downstream permissions.
+
+## Delegation policy
+
+The optional `delegation` map uses the same exact resource/operation vocabulary
+and validation as `permissions`. Omission or `{}` disables delegation, including
+when ordinary permissions are unrestricted. It does not change ordinary use grants.
+Effective delegable operations must also be allowed by `permissions`; a configured
+delegation entry alone cannot authorize use or issuance beyond that policy.
+
+```yaml
+permissions:
+  inputs: [data.read, data.stat]
+delegation:
+  inputs: [data.read]
+```
+
+Here only `data.read` is delegable; `data.stat` is usable but not delegable.
+Configuration validation reports the effective intersection without creating state.
+The map prepares the operator ceiling for the internal scope store; public scope
+creation, binding, and resource views are not available yet. See the
+[accepted delegation design](concepts/authorization.md#delegated-task-access-design).
 
 See the resource-specific pages for complete semantics:
 

@@ -31,7 +31,9 @@ Use `ridge COMMAND --help` for frontend options and output details.
 
 `config validate` uses the runtime loader without constructing the application
 service, probing targets, or creating Ridge state. It reports resolved config/state
-paths and effective grants; exit `0` means valid and `2` reports the first error.
+paths, allowed operations, and effective delegable operations; exit `0` means
+valid and `2` reports the first error. Delegation policy validation does not yet
+enable scope-bound CLI/MCP execution.
 `--json` emits either a success summary or `{"valid": false, "error": "..."}` on
 stdout. See [configuration validation](configuration.md#validate-an-inventory)
 for the output contract, trusted-provider boundary, and sensitive diagnostics.

@@ -25,6 +25,8 @@ the same authoritative configuration; resources may span multiple backends.
   errors. Remote command transports compose the shared helper protocol and
   operations rather than duplicate capability semantics.
 - `registry` owns resource identity and lookup.
+- `_access` owns internal persisted task scopes, hashed handles, attenuation,
+  lineage visibility, and scope lifecycle; frontend admission is not yet wired.
 - `provider` owns provider registration and installed entry-point discovery.
   `config` validates the inventory envelope and asks the selected provider to
   validate and construct each resource.
@@ -244,7 +246,8 @@ the same authoritative configuration; resources may span multiple backends.
 
 The [delegated task access design](concepts/authorization.md#delegated-task-access-design)
 records the accepted contract separately from the current
-process-wide policy below. Delegation and granular lock footprints are not implemented.
+process-wide policy below. The scope store and delegation configuration are
+implemented internally; scope-bound execution and granular lock footprints are not.
 
 `authorization` owns policy decisions; `application` checks them before invoking
 capabilities through either frontend. Copy checks both endpoints before opening
@@ -256,6 +259,27 @@ The [authorization guide](concepts/authorization.md) owns grant semantics,
 discovery visibility, and the distinction between support, permission, and
 downstream authority. The [security model](security.md) owns compute bypasses
 and trusted-provider assumptions.
+
+The internal scope store uses `access_scopes` in the existing `state.sqlite3`;
+it neither acquires nor releases resource claims. Issued use/delegation sets are
+immutable and independently bounded by the parent's delegable authority and the
+intersection of current operator permissions and delegation policy. Restoration
+of policy can restore an issued grant, but cannot add one. Each request consumes
+one freshly checked configuration snapshot; a resolved access value is not a
+credential that can authorize later requests.
+
+Scope issuance and revocation serialize with `BEGIN IMMEDIATE`. Ancestor closure
+blocks descendants without deleting their history. Observed expiry or resource
+identity mismatch is persisted as terminal even when resolution is denied; restoring
+the old configuration does not revive that observed closed scope. Scope records
+include resolved configuration/state paths and semantic identities for all granted
+resources. Parent identity checks include resources omitted by a descendant.
+Inspection/listing by active scopes is subtree-only; operator inspection retains
+closed history. Listings use bounded UUID-ordered pages, not snapshots. Internal
+limits are 100 resource grants, 32 scope levels, and 200 records per page. There is
+no retention/deletion API, provider-root narrowing, or frontend/job/lock binding yet.
+Those admission paths must use the same transactional lifecycle checks before
+scoped execution is exposed; an isolated token lookup is not sufficient enforcement.
 
 ## Durable jobs
 

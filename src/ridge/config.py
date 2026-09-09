@@ -29,6 +29,7 @@ class LoadedConfiguration:
     state_directory: Path | None = None
     lock_keys: dict[str, str] = field(default_factory=lambda: dict[str, str]())
     resource_identities: dict[str, str] = field(default_factory=lambda: dict[str, str]())
+    delegation: AuthorizationPolicy = field(default_factory=lambda: AuthorizationPolicy.exact({}))
 
 
 def _mapping(value: object, label: str) -> Mapping[str, object]:
@@ -65,7 +66,7 @@ def load_configuration(
         raise ConfigurationError(f"cannot read configuration {path}: {exc}") from exc
 
     document = _mapping(raw_document, "configuration")
-    unknown_document_keys = set(document) - {"resources", "permissions", "state"}
+    unknown_document_keys = set(document) - {"resources", "permissions", "delegation", "state"}
     if unknown_document_keys:
         joined = ", ".join(sorted(unknown_document_keys))
         raise ConfigurationError(f"unknown configuration keys: {joined}")
@@ -126,6 +127,7 @@ def load_configuration(
         authorization = AuthorizationPolicy.unrestricted()
     else:
         authorization = _load_permissions(document["permissions"], registry)
+    delegation = _load_permissions(document.get("delegation", {}), registry, label="delegation")
     return LoadedConfiguration(
         registry,
         authorization,
@@ -133,6 +135,7 @@ def load_configuration(
         state_directory,
         lock_keys,
         resource_identities,
+        delegation,
     )
 
 
@@ -180,25 +183,27 @@ def _load_state(value: object, config_path: Path) -> Path:
     return directory.resolve()
 
 
-def _load_permissions(value: object, registry: ResourceRegistry) -> AuthorizationPolicy:
-    permission_config = _mapping(value, "permissions")
+def _load_permissions(
+    value: object, registry: ResourceRegistry, *, label: str = "permissions"
+) -> AuthorizationPolicy:
+    permission_config = _mapping(value, label)
     grants: dict[str, frozenset[Operation]] = {}
     for resource_name, raw_operations in permission_config.items():
         if resource_name not in registry.names():
-            raise ConfigurationError(f"permissions reference unknown resource: {resource_name!r}")
+            raise ConfigurationError(f"{label} reference unknown resource: {resource_name!r}")
         if not isinstance(raw_operations, list):
-            raise ConfigurationError(f"permissions for resource {resource_name!r} must be a list")
+            raise ConfigurationError(f"{label} for resource {resource_name!r} must be a list")
         operations: list[Operation] = []
         for raw_operation in cast(list[object], raw_operations):
             if not isinstance(raw_operation, str):
                 raise ConfigurationError(
-                    f"permissions for resource {resource_name!r} must contain operation names"
+                    f"{label} for resource {resource_name!r} must contain operation names"
                 )
             try:
                 operation = Operation(raw_operation)
             except ValueError as exc:
                 raise ConfigurationError(
-                    f"unknown operation in permissions: {raw_operation!r}"
+                    f"unknown operation in {label}: {raw_operation!r}"
                 ) from exc
             if operation in operations:
                 raise ConfigurationError(

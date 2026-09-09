@@ -82,7 +82,14 @@ provider code remains trusted. Diagnostics may contain sensitive paths, YAML
 excerpts, or provider text, so review before quoting them.
 
 Review resolved config/state paths and each resource's effective allowed operations
-against the request. Explain what remains unverified. Run a small real workflow
+against the request. When preparing delegation policy is requested, review
+`delegable_operations` too: `delegation` is separately default-deny and is intersected
+with ordinary permissions. Do not add delegation grants for routine setup or mistake
+that validation field for an available scope-binding workflow. Consult the installed
+CLI and authorization documentation before attempting delegation; the internal store
+is not a substitute for frontend enforcement.
+
+Explain what remains unverified. Run a small real workflow
 only when its targets and effects are authorized; use an empty disposable scope
 for mutations and inspect outputs and cleanup, not just exit status. Stop on
 unresolved access decisions or uncertain effects instead of broadening grants or
