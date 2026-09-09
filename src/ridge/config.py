@@ -32,6 +32,17 @@ class LoadedConfiguration:
     delegation: AuthorizationPolicy = field(default_factory=lambda: AuthorizationPolicy.exact({}))
 
 
+@dataclass(frozen=True, slots=True)
+class ConfigurationDocument:
+    """One inventory read, before any provider discovery or construction."""
+
+    path: Path
+    state_directory: Path
+    resource_identities: dict[str, str]
+    document: Mapping[str, object]
+    resource_configs: Mapping[str, object]
+
+
 def _mapping(value: object, label: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise ConfigurationError(f"{label} must be a mapping")
@@ -56,6 +67,20 @@ def load_configuration(
     expected_resource_identities: Mapping[str, str] | None = None,
     expected_state_directory: Path | None = None,
 ) -> LoadedConfiguration:
+    document = read_configuration(config_path)
+    if (
+        expected_state_directory is not None
+        and document.state_directory != expected_state_directory.resolve()
+    ):
+        raise ConfigurationError("workspace state directory changed after submission")
+    if expected_resource_identities is not None:
+        for name, identity in expected_resource_identities.items():
+            if document.resource_identities.get(name) != identity:
+                raise ConfigurationError(f"resource {name!r} changed after submission")
+    return construct_configuration(document, providers=providers)
+
+
+def read_configuration(config_path: str | Path) -> ConfigurationDocument:
     path = Path(config_path).expanduser().resolve()
     try:
         raw_bytes = path.read_bytes()
@@ -72,19 +97,21 @@ def load_configuration(
         raise ConfigurationError(f"unknown configuration keys: {joined}")
     resource_configs = _mapping(document.get("resources"), "resources")
     state_directory = _load_state(document.get("state"), path)
-    if (
-        expected_state_directory is not None
-        and state_directory != expected_state_directory.resolve()
-    ):
-        raise ConfigurationError("workspace state directory changed after submission")
     resource_identities = {
         name: _resource_identity(name, _mapping(value, f"resource {name!r}"), path)
         for name, value in resource_configs.items()
     }
-    if expected_resource_identities is not None:
-        for name, identity in expected_resource_identities.items():
-            if resource_identities.get(name) != identity:
-                raise ConfigurationError(f"resource {name!r} changed after submission")
+    return ConfigurationDocument(
+        path, state_directory, resource_identities, document, resource_configs
+    )
+
+
+def construct_configuration(
+    snapshot: ConfigurationDocument, *, providers: ResourceProviderRegistry | None = None
+) -> LoadedConfiguration:
+    path = snapshot.path
+    document = snapshot.document
+    resource_configs = snapshot.resource_configs
     # Identity checks precede discovery/construction of trusted provider code.
     provider_registry = providers or default_provider_registry()
     context = ProviderContext(config_path=path)
@@ -132,9 +159,9 @@ def load_configuration(
         registry,
         authorization,
         path,
-        state_directory,
+        snapshot.state_directory,
         lock_keys,
-        resource_identities,
+        snapshot.resource_identities,
         delegation,
     )
 

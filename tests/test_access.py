@@ -1,16 +1,21 @@
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event
+from unittest.mock import Mock
 
 import pytest
 
 from ridge._access import AccessGrant, ScopeAccessError, ScopeStore
 from ridge.authorization import AuthorizationPolicy
+from ridge.backends.providers import default_provider_registry
 from ridge.config import LoadedConfiguration, load_configuration
 from ridge.coordination import Coordination
 from ridge.model import JobScope, Operation
+from ridge.provider import ProviderContext
+from ridge.resource import Resource
 
 READ = Operation.DATA_READ
 WRITE = Operation.DATA_WRITE
@@ -37,6 +42,133 @@ def store(loaded: LoadedConfiguration) -> ScopeStore:
 
 def grant(*operations: Operation, delegate: tuple[Operation, ...] = ()) -> AccessGrant:
     return AccessGrant("data", frozenset(operations), frozenset(delegate))
+
+
+@pytest.mark.parametrize("token", ["", "wrong", "x" * 257, None])
+def test_checked_load_rejects_invalid_handle_before_provider_discovery(
+    loaded: LoadedConfiguration, store: ScopeStore, monkeypatch: pytest.MonkeyPatch, token: str
+) -> None:
+    assert loaded.path is not None
+    discover = Mock(side_effect=AssertionError("provider discovery must not run"))
+    monkeypatch.setattr("ridge.config.default_provider_registry", discover)
+    with pytest.raises(ScopeAccessError, match="invalid_token"):
+        store.load_configuration(loaded.path, token)
+    discover.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["revoke", "expire", "root", "provider", "lock", "remove"])
+def test_checked_load_rejects_closed_ancestor_before_providers(
+    loaded: LoadedConfiguration, store: ScopeStore, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    assert loaded.path is not None
+    parent = store.issue(loaded, [grant(READ, delegate=(READ,))])
+    child = store.issue(loaded, [grant(READ)], actor_token=parent.token)
+    original = loaded.path.read_text()
+    reason = "invalidated"
+    if change == "revoke":
+        store.revoke(loaded, parent.scope.id)
+        reason = "revoked"
+    elif change == "expire":
+        with store.connect() as connection:
+            connection.execute(
+                "UPDATE access_scopes SET expires_at = ? WHERE id = ?",
+                ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), parent.scope.id),
+            )
+        reason = "expired"
+    else:
+        replacements = {
+            "root": original.replace("root: data", "root: missing"),
+            "provider": original.replace("provider: local", "provider: missing"),
+            "lock": original.replace("lock_key: shared", "lock_key: changed"),
+            "remove": "resources: {}\npermissions: {}\ndelegation: {}\n",
+        }
+        loaded.path.write_text(replacements[change])
+    discover = Mock(side_effect=AssertionError("provider discovery must not run"))
+    monkeypatch.setattr("ridge.config.default_provider_registry", discover)
+    with pytest.raises(ScopeAccessError, match=reason):
+        store.load_configuration(loaded.path, child.token)
+    # Observed closure survives restoring the document, including invalid roots/providers.
+    loaded.path.write_text(original)
+    with pytest.raises(ScopeAccessError, match=reason):
+        store.load_configuration(loaded.path, child.token)
+    discover.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["path", "state"])
+def test_checked_load_rejects_workspace_change_before_providers(
+    loaded: LoadedConfiguration, store: ScopeStore, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    assert loaded.path is not None
+    issued = store.issue(loaded, [grant(READ)])
+    path = loaded.path
+    if change == "path":
+        path = path.with_name("moved.yaml")
+        path.write_text(loaded.path.read_text())
+    else:
+        path.write_text(path.read_text() + "state: {directory: new-state}\n")
+    discover = Mock(side_effect=AssertionError("provider discovery must not run"))
+    monkeypatch.setattr("ridge.config.default_provider_registry", discover)
+    with pytest.raises(ScopeAccessError, match="unavailable|workspace_changed"):
+        store.load_configuration(path, issued.token)
+    assert not (path.parent / "new-state").exists()
+    discover.assert_not_called()
+
+
+def test_checked_load_uses_one_read_for_identity_providers_and_policy(
+    loaded: LoadedConfiguration, store: ScopeStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert loaded.path is not None
+    issued = store.issue(loaded, [grant(READ, WRITE)])
+    original = loaded.path.read_text()
+    # Policy changes take effect without changing resource identity.
+    loaded.path.write_text(
+        original.replace(
+            "permissions: {data: [data.read, data.write]}", "permissions: {data: [data.read]}"
+        )
+    )
+    read_bytes = Path.read_bytes
+    reads = 0
+
+    def swap_after_read(path: Path) -> bytes:
+        nonlocal reads
+        content = read_bytes(path)
+        if path == loaded.path:
+            reads += 1
+            path.write_text(original.replace("root: data", "root: missing"))
+        return content
+
+    monkeypatch.setattr(Path, "read_bytes", swap_after_read)
+    checked, access = store.load_configuration(loaded.path, issued.token)
+    assert reads == 1
+    assert checked.resource_identities == loaded.resource_identities
+    assert checked.lock_keys == loaded.lock_keys
+    assert access.allows("data", READ)
+    assert not access.allows("data", WRITE)
+    assert not checked.authorization.allows("data", WRITE)
+    # A later request sees the changed target and closes the scope.
+    with pytest.raises(ScopeAccessError, match="invalidated"):
+        store.load_configuration(loaded.path, issued.token)
+
+
+def test_checked_load_allows_revocation_during_construction_and_rechecks(
+    loaded: LoadedConfiguration, store: ScopeStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert loaded.path is not None
+    issued = store.issue(loaded, [grant(READ)])
+    providers = default_provider_registry()
+    create = providers.create
+
+    def revoke_then_create(
+        provider_name: str, name: str, config: Mapping[str, object], context: ProviderContext
+    ) -> Resource:
+        # An independent connection must be able to commit while a provider runs.
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(store.revoke, loaded, issued.scope.id).result(timeout=2)
+        return create(provider_name, name, config, context)
+
+    monkeypatch.setattr(providers, "create", revoke_then_create)
+    with pytest.raises(ScopeAccessError, match="revoked"):
+        store.load_configuration(loaded.path, issued.token, providers=providers)
 
 
 def test_issue_reconnect_hashes_and_immutable_grants(

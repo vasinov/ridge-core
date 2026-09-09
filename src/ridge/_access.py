@@ -19,9 +19,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
 
-from ridge.config import LoadedConfiguration
+from ridge.config import (
+    ConfigurationDocument,
+    LoadedConfiguration,
+    construct_configuration,
+    read_configuration,
+)
 from ridge.errors import AuthorizationDeniedError
 from ridge.model import Operation
+from ridge.provider import ResourceProviderRegistry
 
 _MAX_DEPTH = 32
 ScopeStatus = Literal["active", "revoked", "expired", "invalidated"]
@@ -91,6 +97,12 @@ class ScopeAccess:
 class ScopePage:
     scopes: tuple[ScopeInfo, ...]
     next_cursor: str | None
+
+
+def _token_hash(token: str) -> str:
+    if type(token) is not str or not token or len(token) > 256:
+        raise ScopeAccessError("invalid_token")
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def _grants_json(grants: Sequence[AccessGrant]) -> str:
@@ -174,7 +186,7 @@ class ScopeStore:
         finally:
             connection.close()
 
-    def _workspace(self, loaded: LoadedConfiguration) -> str:
+    def _workspace(self, loaded: LoadedConfiguration | ConfigurationDocument) -> str:
         if loaded.path is None or loaded.state_directory is None:
             raise ScopeAccessError("workspace_required")
         if loaded.state_directory.resolve() != self.directory:
@@ -211,7 +223,7 @@ class ScopeStore:
     def _status(
         connection: sqlite3.Connection,
         rows: Sequence[sqlite3.Row],
-        loaded: LoadedConfiguration,
+        loaded: LoadedConfiguration | ConfigurationDocument,
         now: datetime,
     ) -> ScopeStatus:
         for row in rows:
@@ -254,22 +266,13 @@ class ScopeStore:
         connection: sqlite3.Connection | None = None,
     ) -> ScopeAccess:
         """Resolve a bearer handle against current policy and every ancestor."""
-        config_path = self._workspace(loaded)
-        if type(token) is not str or not token or len(token) > 256:
-            raise ScopeAccessError("invalid_token")
+        self._workspace(loaded)
+        _token_hash(token)
         if connection is None:
             with self.transaction() as opened:
                 return self.resolve(loaded, token, connection=opened)
-        row = connection.execute(
-            "SELECT * FROM access_scopes WHERE token_hash = ?",
-            (hashlib.sha256(token.encode()).hexdigest(),),
-        ).fetchone()
-        if row is None:
-            raise ScopeAccessError("invalid_token")
-        rows = self._lineage(connection, row, config_path)
-        status = self._status(connection, rows, loaded, datetime.now(UTC))
-        if status != "active":
-            raise _ClosedScopeError(status)
+        rows = self._active_rows(connection, loaded, token)
+        row = rows[-1]
         ceilings = [
             {grant.resource: grant.delegation for grant in _read_grants(parent["grants_json"])}
             for parent in rows[:-1]
@@ -287,8 +290,48 @@ class ScopeStore:
                 AccessGrant(grant.resource, grant.operations & ceiling, grant.delegation & ceiling)
             )
         return ScopeAccess(
-            self._info(row, status), tuple(parent["id"] for parent in rows), tuple(effective)
+            self._info(row, "active"), tuple(parent["id"] for parent in rows), tuple(effective)
         )
+
+    def _active_rows(
+        self,
+        connection: sqlite3.Connection,
+        loaded: LoadedConfiguration | ConfigurationDocument,
+        token: str,
+    ) -> tuple[sqlite3.Row, ...]:
+        config_path = self._workspace(loaded)
+        row = connection.execute(
+            "SELECT * FROM access_scopes WHERE token_hash = ?",
+            (_token_hash(token),),
+        ).fetchone()
+        if row is None:
+            raise ScopeAccessError("invalid_token")
+        rows = self._lineage(connection, row, config_path)
+        status = self._status(connection, rows, loaded, datetime.now(UTC))
+        if status != "active":
+            raise _ClosedScopeError(status)
+        return rows
+
+    def load_configuration(
+        self,
+        config_path: str | Path,
+        token: str,
+        *,
+        providers: ResourceProviderRegistry | None = None,
+    ) -> tuple[LoadedConfiguration, ScopeAccess]:
+        """Check lifecycle before providers, then resolve against the same document.
+
+        No transaction spans provider construction. Closure during construction
+        is caught by the second check. The returned snapshot is not execution
+        admission: the operation must check again in its claim transaction.
+        """
+        _token_hash(token)
+        document = read_configuration(config_path)
+        self._workspace(document)
+        with self.transaction() as connection:
+            self._active_rows(connection, document, token)
+        loaded = construct_configuration(document, providers=providers)
+        return loaded, self.resolve(loaded, token)
 
     def issue(
         self,

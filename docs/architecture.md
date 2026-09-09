@@ -268,6 +268,16 @@ of policy can restore an issued grant, but cannot add one. Each request consumes
 one freshly checked configuration snapshot; a resolved access value is not a
 credential that can authorize later requests.
 
+Configuration loading separates a single document read/semantic identity pass
+from provider discovery and construction. The internal scope-aware loader checks
+the handle, workspace, and every ancestor's lifecycle against that document before
+loading providers, then resolves effective grants from the same constructed document.
+It rechecks closure after construction without holding a database transaction across
+provider code. A changed identity can therefore close a scope before even an invalid
+replacement provider or root is constructed. The result still contains the full
+operator inventory: it is preparation for admission, not a filtered service or
+execution authority. Admission must recheck lifecycle in its claim transaction.
+
 Scope issuance and revocation serialize with `BEGIN IMMEDIATE`. Ancestor closure
 blocks descendants without deleting their history. Observed expiry or resource
 identity mismatch is persisted as terminal even when resolution is denied; restoring
