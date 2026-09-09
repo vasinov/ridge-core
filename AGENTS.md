@@ -27,6 +27,7 @@ Keep each document focused:
 - `docs/`: detailed user, provider, API, and security documentation;
 - `docs/guides/`, resource guides, and frontend references: supported workflows;
 - `docs/architecture.md`: architecture, ownership, and invariants;
+- `skills/`: agent workflow instructions, linking to owning docs for contracts;
 - `AGENTS.md`: contributor and agent operating rules.
 
 Do not duplicate implementation history across these files. Completed detail
@@ -40,8 +41,12 @@ the scope of the requested change.
 For every feature addition, modification, or bug fix, review documentation impact
 before implementation and recheck it against the verified result. Inspect the
 existing owning docs and relevant README sections, examples, configuration,
-CLI/MCP help, and API/provider references. Update affected claims and examples in
-the same change; do not defer correctness to a later documentation pass. Update
+CLI/MCP help, API/provider references, repository-owned skills (including their
+references and examples), and integrated harness/plugin documentation. Review
+these surfaces when the change affects their workflows; update affected claims
+and examples in the same change, not a later documentation pass. Keep shared
+contracts in their owning docs and harness-specific setup in integration guidance;
+skills and packaging must not substitute for runtime enforcement. Update
 `README.md` only for material user-facing changes. If no updates are needed,
 briefly state why in the task handoff.
 
