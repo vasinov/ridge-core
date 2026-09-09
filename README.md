@@ -137,7 +137,6 @@ uv venv --python 3.11
 uv pip install ridge-core
 ```
 
-Before the first PyPI release, install from a source checkout with `uv pip install .`.
 For a Python project managed by uv, use `uv add ridge-core`.
 
 Use Ridge directly:

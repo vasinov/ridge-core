@@ -6,17 +6,27 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Releases created with GITHUB_TOKEN do not emit a new release-triggered run.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
 
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
-  group: docs-${{ github.event.pull_request.number || github.ref }}
+  # Serialize the entire build/deploy sequence, including manual rebuilds.
+  group: docs-${{ (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch') && 'publication' || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
-    name: Build documentation
+    name: Check development documentation
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -32,27 +42,112 @@ jobs:
         run: uv sync --locked --no-dev --group docs
       - name: Build documentation
         run: uv run --no-sync --group docs mkdocs build --strict
-      - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+
+  release:
+    name: Build released documentation
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          python-version: '3.14'
+      - name: Resolve latest final release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=$(gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" |
+            uv run --no-project python scripts/docs_release.py)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -z "$tag" ]; then
+            echo 'No final release yet; keeping the existing documentation site.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git fetch --no-tags origin "refs/tags/$tag"
+          sha=$(git rev-parse 'FETCH_HEAD^{commit}')
+          git merge-base --is-ancestor "$sha" origin/main
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Check out the released source
+        if: steps.release.outputs.tag != ''
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+          persist-credentials: false
+      - name: Build with the release's source and dependency lock
+        if: steps.release.outputs.tag != ''
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          uv sync --locked --no-dev --group docs
+          uv run --no-sync --group docs python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          assert os.environ['RELEASE_TAG'] == f'v{version}', 'Tag/version mismatch'
+          PY
+          uv run --no-sync --group docs mkdocs build --strict
+          printf 'Built documentation from %s (%s).\n' "$RELEASE_TAG" "$RELEASE_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload released Pages artifact
+        if: steps.release.outputs.tag != ''
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: site
 
   deploy:
     name: Deploy documentation
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: build
+    if: needs.release.outputs.tag != ''
+    needs: release
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          python-version: '3.14'
+      - name: Avoid deploying a superseded release
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILT_TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          tag=$(gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" |
+            uv run --no-project python scripts/docs_release.py)
+          if [ "$tag" = "$BUILT_TAG" ]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'A newer release superseded this build; keeping the site until its docs run completes.' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Configure Pages
+        if: steps.current.outputs.deploy == 'true'
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Deploy to GitHub Pages
+        if: steps.current.outputs.deploy == 'true'
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

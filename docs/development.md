@@ -76,22 +76,25 @@ change. Documentation is checked and published by the separate workflow below.
 
 ## Documentation publishing
 
-The `Documentation` GitHub Actions workflow builds the MkDocs site on pull
-requests to `main`, pushes to `main`, and manual runs. It uses Python 3.14 and
-the documentation dependencies in `uv.lock`; a stale lockfile or a strict-build
-warning fails the build. All changes trigger the check because the generated
-Python API documentation also depends on source code.
+The `Documentation` workflow checks every pull request and push to `main` with
+a strict MkDocs build. These development checks never deploy. The public site
+uses the highest final `vX.Y.Z` version published as a GitHub Release, excluding
+drafts and prereleases. A successful tag-triggered **Release** run starts docs
+publication separately; it does not depend on a GitHub `release` event.
 
-After a successful build on `main`, the workflow publishes the `site/` artifact
-to [GitHub Pages](https://vasinov.github.io/ridge-core/). Pull requests and manual
-runs on other branches only build. Generated HTML is not committed. Deployment
-uses the built-in `GITHUB_TOKEN` and OIDC, with deployment permissions limited
-to the deploy job; no personal token or repository secret is required.
+To rebuild the site, manually run **Documentation** on `main`. Both automatic
+and manual publication resolve the released tag to a commit and build that
+commit's docs, Python API source, and `uv.lock` with Python 3.14. They never mix in
+unreleased docs. Corrections ship in the next release; before the first release,
+publication is skipped and the existing site stays available.
 
-The deployment job links to the published site. Build failures appear in
-**Build documentation**. If **Deploy documentation** fails, check that Pages uses
-GitHub Actions as its source, the `github-pages` environment permits `main`, and
-required deployment reviews and workflow permissions are satisfied.
+Publication runs are serialized and recheck the latest release before deployment
+so an older build cannot replace a newer deployment. Build summaries identify
+the selected tag and commit. Generated HTML is not committed. Only the deploy job
+has Pages write and OIDC permissions; no personal token is needed.
+Pages must use GitHub Actions, and the `github-pages` environment must permit
+`main`: the workflow runs on `main` even though it builds a released commit.
+Manual runs on other branches and failed or rehearsal release runs do not deploy.
 
 ## Versioning and releases
 
@@ -165,8 +168,9 @@ publishes those same files and reviewed notes as a GitHub Release. The command
 watches that run and reports both publications. To rehearse without publishing,
 manually run **Release** on `main` in Actions after the workflow is pushed.
 After publication, check a fresh `uv pip install ridge-core==X.Y.Z`, the PyPI
-badge/listing, GitHub notes/assets, and documentation links. Remove the temporary
-pre-PyPI source-install fallback when preparing the first release.
+badge/listing, GitHub notes/assets, and the separate **Documentation** run. Its
+failure does not undo package publication; fix the workflow or retry the released
+docs rebuild without publishing the package again.
 
 ### Recover
 

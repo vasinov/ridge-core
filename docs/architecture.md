@@ -183,7 +183,10 @@ the same authoritative configuration; resources may span multiple backends.
   verified build's artifacts; they do not rebuild with publishing credentials.
 - Public documentation uses MkDocs with Markdown source, Material for MkDocs,
   and mkdocstrings for the Python extension API. Documentation dependencies do
-  not enter the runtime dependency set.
+  not enter the runtime dependency set. Published documentation uses the highest
+  final published release's source and dependency lock; development builds only
+  check changes. Manual rebuilds use the same release selection, and documentation
+  corrections ship in a subsequent release.
 - The configuration file defines the resource inventory; resource locations
   identify data within it.
 - Object storage and rooted filesystems retain separate mechanism contracts,

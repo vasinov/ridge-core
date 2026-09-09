@@ -102,10 +102,11 @@ redaction. Review before sharing.
 
 ## Agent-assisted setup
 
-The repository-owned [ridge-setup skill](https://github.com/vasinov/ridge-core/tree/main/skills/ridge-setup)
-guides an agent from your workflow to an explicit workspace configuration. Give
-the agent that skill directory (or ask it to read its `SKILL.md`), the installed Ridge executable,
-the intended configuration path, and the actual targets and operations you want.
+The repository-owned `ridge-setup` skill, in `skills/ridge-setup/` at your
+installed release's tag, guides an agent from your workflow to an explicit workspace
+configuration. Give the agent that skill directory (or ask it to read its
+`SKILL.md`), the installed Ridge executable, the intended configuration path,
+and the actual targets and operations you want.
 For example: “Use ridge-setup to let me read this input directory and run analysis
 in that workspace, without granting deletion.” Client-specific installation and
 plugin packaging are separate from this skill; it is not automatically installed

@@ -22,6 +22,8 @@ on macOS and Linux.
 - Connect agent clients using documented Codex, Claude, desktop, VS Code, and
   LangChain recipes, local plugin packaging, and executable delegation examples.
 - Publish versioned wheel/source distributions through verified release automation.
+- Keep the public documentation and manual rebuilds on the latest final release;
+  check development documentation independently before publication.
 
 Ridge mediates participating resource operations; it is not a sandbox or agent
 orchestrator. Native infrastructure permissions still apply. Docker/SSH workers

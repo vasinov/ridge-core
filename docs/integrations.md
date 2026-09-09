@@ -21,6 +21,8 @@ parent/child workflow for terminal clients.
 Install Ridge on the host that runs the frontend and select the workspace with an
 absolute configuration path. That host needs the existing backend access and
 must remain available for its background work. Resources themselves can be remote.
+Use the matching `vX.Y.Z` source tag for repository-owned skills, plugin builders,
+and integration examples so they agree with the installed release.
 
 ## Give each child its own access
 

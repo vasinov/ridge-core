@@ -50,7 +50,6 @@ ridge --help
 ```
 
 The distribution is named `ridge-core`; the import and command are `ridge`.
-Before the first PyPI release, use `uv pip install .` from a source checkout.
 In a uv-managed Python project, use `uv add ridge-core`.
 For development instead, use `uv sync` and `. .venv/bin/activate`.
 Keep the environment active so `ridge` and `python3` are available on `PATH`.

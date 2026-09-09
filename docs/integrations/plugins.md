@@ -6,7 +6,7 @@ a hosted service, provision resources, or change workspace permissions.
 
 ## Build a workspace-bound bundle
 
-From the Ridge repository:
+From the Ridge repository at the `vX.Y.Z` tag matching your installed version:
 
 ```bash
 uv run python integrations/build_plugin.py /absolute/path/to/plugins/ridge \
