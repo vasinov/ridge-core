@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  # A manual run rehearses verification and artifact creation without publishing.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    uses: ./.github/workflows/tests.yml
+
+  build:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          python-version: '3.11'
+      - run: uv sync --locked --group docs
+      - name: Validate release identity and extract reviewed notes
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_EVENT: ${{ github.event_name }}
+        run: |
+          uv run --no-sync python - <<'PY'
+          import os
+          import subprocess
+          import tomllib
+          from pathlib import Path
+          from scripts.release import release_notes, version_tuple
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          version_tuple(version)
+          if os.environ['RELEASE_EVENT'] == 'push':
+              assert os.environ['RELEASE_REF'] == f'refs/tags/v{version}', 'Tag/version mismatch'
+              subprocess.run(['git', 'merge-base', '--is-ancestor', 'HEAD', 'origin/main'], check=True)
+          Path('release-notes.md').write_text(release_notes(Path('CHANGELOG.md').read_text(), version))
+          PY
+      - run: uv run --no-sync mkdocs build --strict
+      - name: Build release artifacts
+        run: uv build --no-sources
+      - name: Verify fresh wheel and source installations
+        run: uv run --no-sync python scripts/check_dist.py
+      - name: Check distribution metadata
+        run: uv publish --dry-run --trusted-publishing never dist/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-assets
+          path: |
+            dist/*
+            release-notes.md
+          if-no-files-found: error
+          retention-days: 30
+
+  pypi:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/ridge-core/
+    permissions:
+      id-token: write
+    steps:
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets
+      - name: Publish verified distributions (identical files may be retried)
+        run: >-
+          uv publish --trusted-publishing always
+          --publish-url https://upload.pypi.org/legacy/
+          --check-url https://pypi.org/simple dist/*
+
+  github:
+    needs: pypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets
+      - name: Publish GitHub Release after PyPI succeeds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "Ridge $RELEASE_TAG" --notes-file release-notes.md
+          fi
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --notes-file release-notes.md
+          printf 'Published https://pypi.org/project/ridge-core/ and GitHub release %s\n' "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

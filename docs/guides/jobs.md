@@ -193,7 +193,8 @@ supervision accepts current use or delegation grants for every recorded operatio
 See [supervising delegated work](#supervising-delegated-work).
 
 Writes have kind `write` and a `data.write` scope for either addressing model.
-Copy records source `data.read` and destination `data.write`. Job formats are
-active-development contracts without migrations. To retain an earlier
-development version's job data, leave its directory intact and select a new
-`state.directory` for the current version.
+Copy records source `data.read` and destination `data.write`. Published job formats
+follow the [release compatibility policy](../development.md#versioning-and-releases).
+A breaking release may require a new `state.directory`; follow its upgrade notes
+and leave earlier state intact. Unpublished development snapshots have no migration
+guarantee. Never discard state while a worker or recovery operation may still use it.

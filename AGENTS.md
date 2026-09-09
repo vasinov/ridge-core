@@ -99,15 +99,27 @@ and interacting examples (including resource aliases and state placement), and
 validate the example with the current loader. Keep the example portable; it need
 not enumerate every option.
 
-Treat Ridge as active-development software with no backward-compatibility
-obligation unless the project documents establish one. When an internal or
-persisted shape changes, update the current implementation, fixtures, and
-documentation together. Do not retain migrations, deprecated aliases, schema
-dispatch, dual representations, or wrappers solely for earlier development
-versions.
+Follow the published versioning contract in `docs/development.md`: during 0.x,
+patch releases preserve public compatibility; minor releases may break it with
+explicit upgrade notes. When an internal or persisted shape changes, update the
+implementation, fixtures, and documentation together. Do not retain migrations,
+deprecated aliases, schema dispatch, dual representations, or wrappers solely
+for unpublished development versions. Never delete old user state during an upgrade.
 
 Delete superseded paths and documentation once their replacement is proven.
 Never delete user data as part of code cleanup.
+
+### Release preparation
+
+Follow `docs/development.md` for release preparation, version selection, and
+recovery. Review the complete commit range and aggregate diff since the previous
+release tag (all public history for the first release), including merged branches;
+use current docs and tests to verify claims. Maintain reviewed `CHANGELOG.md`
+notes covering important features, fixes, compatibility/upgrade requirements,
+and limitations, grouped by user impact rather than copied commit subjects.
+Check the notes against the entire range so less recent work is not omitted.
+Preparing automation or notes does not authorize publishing: running the release
+command without `--dry-run` pushes Git refs and publishes to GitHub and PyPI.
 
 ## Verification
 

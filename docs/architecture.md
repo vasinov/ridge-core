@@ -176,6 +176,11 @@ the same authoritative configuration; resources may span multiple backends.
 - The product, import package, and CLI are named `Ridge` and `ridge`. The Python
   distribution is named `ridge-core` because the `ridge` distribution name is
   already occupied.
+- `pyproject.toml` owns the package version; `uv.lock` records the same project
+  version. A release's `vX.Y.Z` tag identifies the verified source snapshot.
+  The [development guide](development.md#versioning-and-releases) owns compatibility,
+  release notes, artifact publication, and recovery. Publishing jobs consume the
+  verified build's artifacts; they do not rebuild with publishing credentials.
 - Public documentation uses MkDocs with Markdown source, Material for MkDocs,
   and mkdocstrings for the Python extension API. Documentation dependencies do
   not enter the runtime dependency set.

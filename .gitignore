@@ -9,6 +9,7 @@ site/
 /.pytest_cache/
 /.ruff_cache/
 /dist/
+/release-notes.md
 /ridge-demo/
 
 # Maintainer-local agent context and runtime state.

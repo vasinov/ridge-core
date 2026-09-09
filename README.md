@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml)
 [![Documentation](https://github.com/vasinov/ridge-core/actions/workflows/docs.yml/badge.svg?branch=main)](https://vasinov.github.io/ridge-core/)
+[![PyPI](https://img.shields.io/pypi/v/ridge-core)](https://pypi.org/project/ridge-core/)
 
 ### A resource mesh for AI agents
 
@@ -127,13 +128,17 @@ Run `ridge config validate` to check a configuration, or use the
 
 ## Install and connect
 
-From a source checkout, with Python 3.11+ on macOS or Linux:
+With [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.11+
+on macOS or Linux:
 
 ```bash
-python3 -m venv .venv
+uv venv --python 3.11
 . .venv/bin/activate
-python -m pip install .
+uv pip install ridge-core
 ```
+
+Before the first PyPI release, install from a source checkout with `uv pip install .`.
+For a Python project managed by uv, use `uv add ridge-core`.
 
 Use Ridge directly:
 

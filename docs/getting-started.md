@@ -38,23 +38,29 @@ and three local resources, without a cloud account or Docker.
 
 ## Install
 
-From a Ridge source checkout, create and activate an environment with Python
-3.11 or newer. These commands use a POSIX shell (macOS or Linux):
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then create
+and activate an environment with Python 3.11 or newer. These commands use a
+POSIX shell (macOS or Linux):
 
 ```bash
-python3 -m venv .venv
+uv venv --python 3.11
 . .venv/bin/activate
-python -m pip install .
+uv pip install ridge-core
 ridge --help
 ```
 
 The distribution is named `ridge-core`; the import and command are `ridge`.
+Before the first PyPI release, use `uv pip install .` from a source checkout.
+In a uv-managed Python project, use `uv add ridge-core`.
 For development instead, use `uv sync` and `. .venv/bin/activate`.
 Keep the environment active so `ridge` and `python3` are available on `PATH`.
 
 ## Create the demo workspace
 
-Run the following from the checkout root, using a fresh `ridge-demo` directory.
+The demo assets live in the source repository. Clone
+`https://github.com/vasinov/ridge-core.git` if needed, then run the following from
+the checkout root, using a fresh `ridge-demo` directory. To match an installed
+release, check out its `vX.Y.Z` tag before copying the assets.
 The bundled [inventory](examples/assets/ridge.yaml) defines `inputs`, `worker`,
 and `reports` as local resources. Together with its policy and managed state,
 this configuration defines a [Ridge workspace](configuration.md#workspace).
