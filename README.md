@@ -1,5 +1,8 @@
 # Ridge
 
+[![Tests](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/vasinov/ridge-core/actions/workflows/tests.yml)
+[![Documentation](https://github.com/vasinov/ridge-core/actions/workflows/docs.yml/badge.svg?branch=main)](https://vasinov.github.io/ridge-core/)
+
 ### A resource mesh for AI agents
 
 Give your agent resources. Let it build the team.
