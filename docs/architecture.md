@@ -209,6 +209,14 @@ the same authoritative configuration; resources may span multiple backends.
 
 ### Frontends
 
+- Client integration code lives outside the runtime in `integrations/`. Clients
+  connect to installed Ridge; framework dependencies remain isolated. Plugin
+  builds copy the canonical repository skills rather than maintaining forks.
+  Separate child processes/connections are the baseline for distinct bindings;
+  native harness subagents may reuse the workflow when they expose that binding.
+  Hosts own spawning and handle delivery, while models may choose and issue
+  grants through the ordinary Ridge API. No orchestration service is introduced.
+
 - MCP is a local stdio frontend with a separate `ridge-mcp` entry point. It uses
   the existing YAML inventory and ambient process authority; Ridge does not add
   an MCP-specific configuration or authorization domain.

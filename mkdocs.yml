@@ -38,7 +38,12 @@ nav:
   - Overview: index.md
   - First local workflow: getting-started.md
   - Configuration: configuration.md
-  - Integrations: integrations.md
+  - Integrations:
+      - Overview: integrations.md
+      - Client setup: integrations/clients.md
+      - Agent-led handoff: integrations/agents.md
+      - LangChain: integrations/langchain.md
+      - Local plugins: integrations/plugins.md
   - Delegating work: guides/delegation.md
   - Examples:
       - Overview: examples/index.md

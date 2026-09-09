@@ -16,32 +16,11 @@ Grant `data_root` narrows data addressing relative to the parent view;
 [rooted data semantics](guides/delegation.md#narrow-data-views) before using
 compute alongside a narrower data grant.
 
-For Codex, configure absolute paths:
-
-```toml
-[mcp_servers.ridge]
-command = "/path/to/environment/bin/ridge-mcp"
-args = ["--config", "/path/to/ridge.yaml"]
-required = true
-default_tools_approval_mode = "writes"
-```
-
-For a delegated Codex process, the host supplies that child's `RIDGE_SCOPE_TOKEN`
-and adds `env_vars = ["RIDGE_SCOPE_TOKEN"]` to this MCP server configuration.
-Alternatively, append `--scope-token-file` and an absolute protected token-file
-path to `args`. Use a distinct process/connection per child and verify its expected
-scope ID with `inspect_access`; a shared operator connection does not become
-scoped because the prompt names a child. Reconnect with the same handle for an
-ongoing task.
-
-A programmable host can use `codex exec` with process-local `-c` MCP overrides;
-`--ephemeral --ignore-user-config` avoids retained rollout history and unrelated
-user configuration for a disposable acceptance run. The host still owns spawning,
-credentials, approvals, and cleanup. See Codex's
-[MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) and
-[non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode).
-This workflow has been exercised with separate Codex CLI processes; desktop UI
-and other harness-specific delegation workflows are not yet verified.
+See [client setup](integrations/clients.md) for executable/configuration recipes,
+desktop connections and child bindings. The [agent-led handoff](integrations/agents.md)
+demonstrates a programmable host using process-local client configuration without
+editing personal settings. Client configuration belongs in those guides; the
+tool contracts below apply to every MCP client.
 
 The server provides explicit tools for discovery, inspection, execution,
 data operations (`list_data`, `read_data`, `write_data`, `stat_data`, `delete_data`), copy,

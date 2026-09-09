@@ -41,6 +41,15 @@ and harness instructions too. The [delegation example](examples/delegation.md)
 has process-level regression coverage; the README's scope grant is exercised
 against a disposable workspace, not checked only for matching text.
 
+Client adapters and plugin templates live in `integrations/`. The plugin builder
+copies `skills/` from its canonical source; do not edit generated skill copies.
+Run `integrations/agent_demo.py` for model-driven client acceptance separately
+from ordinary pytest. That workflow returns newly issued scope handles through
+the model conversation, so use disposable authority and approved provider data
+handling. Never persist its raw responses. Framework examples use isolated
+dependencies; `tests/test_integrations.py` covers launch configuration, bundle
+contents, overwrite refusal, and the host lifecycle without model credentials.
+
 Never use valuable data for destructive conformance or whole-tree replacement
 tests. Create unique disposable roots/prefixes, bound payloads and time, and
 clean up only artifacts created by your run. For S3, also inspect unfinished

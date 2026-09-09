@@ -1,0 +1,9 @@
+{
+  "name": "ridge",
+  "version": "0.1.0",
+  "description": "A resource mesh for AI agents: delegate access and work across named resources.",
+  "author": {"name": "Ridge contributors"},
+  "homepage": "https://vasinov.github.io/ridge-core/integrations/",
+  "repository": "https://github.com/vasinov/ridge-core",
+  "license": "Apache-2.0"
+}

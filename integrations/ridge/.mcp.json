@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ridge": {
+      "command": "ridge-mcp",
+      "args": []
+    }
+  }
+}

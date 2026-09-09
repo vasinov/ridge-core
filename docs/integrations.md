@@ -6,6 +6,12 @@ and Python; integrations do not create another authorization system.
 
 ## Choose the connection
 
+Start with [client setup](integrations/clients.md) for Codex, Claude Code,
+Claude Desktop, and VS Code/Copilot, or the [LangChain agent](integrations/langchain.md).
+The [local plugin](integrations/plugins.md) packages setup guidance with your
+installed server. The [agent-led handoff](integrations/agents.md) is a runnable
+parent/child workflow for terminal clients.
+
 | Surface | Use it for | Start here |
 | --- | --- | --- |
 | Local stdio MCP | An agent discovers resources and invokes Ridge tools | [MCP setup](mcp.md) |
@@ -27,18 +33,6 @@ A shared operator connection does not become scoped because a prompt names a
 subagent. The host must support a distinct binding per child. Read
 [delegating work](guides/delegation.md) for lifecycle and
 [the runnable handoff](examples/delegation.md) for process plumbing.
-
-## Client coverage
-
-Separate Codex CLI processes have exercised scoped MCP tasks, denied operations,
-reconnect, revocation, and parent supervision. The [MCP reference](mcp.md) contains
-the connection recipe.
-
-Desktop-client installation/UI behavior, other harnesses' native child-binding
-mechanisms, and framework-specific adapters are not established by that test.
-Direct MCP compatibility alone does not prove per-child binding. Client-specific
-packaging can reuse the installed server and existing setup skill; it does not
-replace Ridge's permission checks.
 
 ## Setup and troubleshooting
 

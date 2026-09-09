@@ -141,8 +141,8 @@ Or connect an agent's MCP client to:
 
 The CLI, MCP server, and Python API share the same resource access and coordination.
 
-See [integrations](https://vasinov.github.io/ridge-core/integrations/) for connection
-options, or try the
+Connect [Codex, Claude Code, desktop clients, or LangChain](https://vasinov.github.io/ridge-core/integrations/),
+package a local plugin, or try the
 [runnable local workflow](https://vasinov.github.io/ridge-core/getting-started/).
 
 ## Bring the resources you already have

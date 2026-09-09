@@ -47,6 +47,10 @@ put the token in the child's prompt or per-tool arguments. Explicit files overri
 environment binding and are read at startup. Protect token files and transcripts;
 do not include handles in a handoff summary. Harness-specific spawning and connection
 configuration belong to that harness's integration guidance, not to Ridge policy.
+Use the [client recipes](https://vasinov.github.io/ridge-core/integrations/clients/)
+and [executable handoff](https://vasinov.github.io/ridge-core/integrations/agents/)
+when the host needs connection or launch plumbing. The local plugin bundles this
+same skill; direct MCP remains available without a plugin.
 
 In the child connection, call `access inspect`/`inspect_access` and verify the
 expected scope ID and effective grants before work. Reconnect with that same handle

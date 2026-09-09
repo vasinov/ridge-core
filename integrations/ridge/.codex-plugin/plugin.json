@@ -1,0 +1,19 @@
+{
+  "name": "ridge",
+  "version": "0.1.0",
+  "description": "A resource mesh for AI agents: delegate access and work across named resources.",
+  "author": {
+    "name": "Ridge contributors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Ridge",
+    "shortDescription": "Give your agent resources. Let it build the team.",
+    "longDescription": "Connect an installed Ridge workspace, derive tailored task access, and coordinate resource operations across agents.",
+    "developerName": "Ridge contributors",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Inspect my Ridge workspace and help me delegate a task with tailored resource access."
+  },
+  "mcpServers": "./.mcp.json"
+}
