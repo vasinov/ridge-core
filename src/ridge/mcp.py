@@ -44,6 +44,23 @@ _EXEC_STREAM_BYTES = 32 * 1024
 _DEFAULT_LIST_LIMIT = 100
 _MAX_LIST_LIMIT = 200
 
+_Background = Annotated[
+    bool,
+    Field(
+        description="Default false: complete in this call without a job or idempotency_key. "
+        "Set true for durable background work when duration is uncertain, cancellation or "
+        "incremental logs matter, or a tool timeout is likely."
+    ),
+]
+_IdempotencyKey = Annotated[
+    str | None,
+    Field(
+        description="Only valid with background=true; omit for foreground operations. "
+        "Choose a key on initial submission and reuse it with the identical request on retry. "
+        "Different assignments sharing an access scope need different keys."
+    ),
+]
+
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -456,8 +473,10 @@ def create_server(service: RidgeService) -> MCPServer[None]:
             "properties are needed. Paths and object keys are relative to each configured resource. "
             "Use copy for large or binary content. Pass commands as an argv array, never as a shell "
             "command string. Set background=true when duration is uncertain, incremental logs or "
-            "cancellation matter, or a synchronous tool timeout is likely. Do not retry a submission "
-            "without an idempotency_key. Ordinary operations acquire resource claims automatically. "
+            "cancellation matter, or a synchronous tool timeout is likely. For bounded foreground "
+            "copies and writes, omit background and idempotency_key. Keys require background=true; "
+            "choose one on initial submission and reuse it with the identical request on retry. "
+            "Ordinary operations acquire resource claims automatically. "
             "Use acquire_locks to reserve resources across calls, pass lock_token on each operation, "
             "and renew before lease expiry. Inspect outstanding claims after conflicts; uncertain "
             "work may still be running. Release sessions when finished."
@@ -486,8 +505,8 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         timeout_seconds: float | None = None,
-        background: bool = False,
-        idempotency_key: str | None = None,
+        background: _Background = False,
+        idempotency_key: _IdempotencyKey = None,
         lock_token: str | None = None,
     ) -> ExecuteOperationResult:
         """Execute argv on a compute resource with bounded model-facing output."""
@@ -569,8 +588,8 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         path: str,
         content: str,
         encoding: Literal["utf-8", "base64"] = "utf-8",
-        background: bool = False,
-        idempotency_key: str | None = None,
+        background: _Background = False,
+        idempotency_key: _IdempotencyKey = None,
         lock_token: str | None = None,
     ) -> WriteOperationResult:
         """Create or replace a file/object from buffered UTF-8 text or base64 bytes."""
@@ -600,8 +619,8 @@ def create_server(service: RidgeService) -> MCPServer[None]:
         resource: str,
         path: str,
         recursive: bool = False,
-        background: bool = False,
-        idempotency_key: str | None = None,
+        background: _Background = False,
+        idempotency_key: _IdempotencyKey = None,
         lock_token: str | None = None,
     ) -> DeleteOperationResult:
         """Delete an exact path/key. Nonempty trees require recursive; no rollback or root deletion."""
@@ -640,8 +659,8 @@ def create_server(service: RidgeService) -> MCPServer[None]:
     def copy(
         source: str,
         destination: str,
-        background: bool = False,
-        idempotency_key: str | None = None,
+        background: _Background = False,
+        idempotency_key: _IdempotencyKey = None,
         lock_token: str | None = None,
     ) -> CopyOperationResult:
         """Copy a file or directory tree between exact RESOURCE:PATH locations."""

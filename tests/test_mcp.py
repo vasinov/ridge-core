@@ -150,6 +150,15 @@ async def test_server_declares_explicit_tools_and_annotations(tmp_path: Path) ->
         resources = _structured(await client.call_tool("list_resources", {}))
 
     tools = {tool.name: tool for tool in listing.tools}
+    for name in ("execute", "write_data", "delete_data", "copy"):
+        properties = tools[name].input_schema["properties"]
+        assert properties["background"]["default"] is False
+        assert "without a job or idempotency_key" in properties["background"]["description"]
+        assert properties["idempotency_key"]["default"] is None
+        guidance = properties["idempotency_key"]["description"]
+        assert "Only valid with background=true" in guidance
+        assert "omit for foreground" in guidance
+        assert "identical request on retry" in guidance
     assert set(tools) == {
         "create_scope",
         "list_scopes",
@@ -197,6 +206,33 @@ async def test_server_declares_explicit_tools_and_annotations(tmp_path: Path) ->
         "background_operations",
     }
     assert local["background_operations"] == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("execute", {"resource": "local", "argv": [sys.executable, "-c", "raise SystemExit(0)"]}),
+        ("write_data", {"resource": "local", "path": "source", "content": "changed"}),
+        ("delete_data", {"resource": "local", "path": "source"}),
+        ("copy", {"source": "local:source", "destination": "local:destination"}),
+    ],
+)
+async def test_foreground_idempotency_key_rejected_before_dispatch(
+    tmp_path: Path, tool: str, arguments: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_dispatch(*args: object, **kwargs: object) -> None:
+        pytest.fail("Invalid foreground request reached the operation")
+
+    monkeypatch.setattr(RidgeService, tool, unexpected_dispatch)
+    (tmp_path / "source").write_text("original")
+    async with Client(create_server(_service(tmp_path))) as client:
+        result = await client.call_tool(tool, {**arguments, "idempotency_key": "retry"})
+    assert result.is_error
+    assert result.content[0].type == "text"
+    assert "idempotency_key requires background=true" in result.content[0].text
+    assert (tmp_path / "source").read_text() == "original"
+    assert not (tmp_path / "destination").exists()
 
 
 @pytest.mark.anyio

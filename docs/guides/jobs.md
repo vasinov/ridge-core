@@ -32,7 +32,9 @@ Background supervision requires a POSIX host with local filesystem locking and
 on a local filesystem supporting SQLite and advisory locks. A supervisor owns
 one separate worker process group; built-in local copy helpers stay in that group.
 
-Use an idempotency key when a caller may lose the submission response and retry.
+Idempotency keys apply only to background submissions; omit them for foreground
+operations. Choose a key on the initial submission when a caller may lose the
+response and retry.
 The same key and identical request return the existing job. Reusing the key for
 different content or parameters fails.
 Keys belong to the submitting access scope. Independent assignments sharing an

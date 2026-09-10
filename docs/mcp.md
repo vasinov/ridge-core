@@ -87,8 +87,12 @@ The execution, write, delete, and copy tools accept `background=true` and return
 response whose `mode` is `completed` or `submitted`. Submitted responses contain
 a job handle. Use `list_jobs`, `inspect_job`, `read_job_logs`, and `cancel_job`
 to reconnect. Use background mode when runtime is uncertain, cancellation or
-incremental local logs matter, or a synchronous tool timeout is likely. Provide
-an `idempotency_key` before retrying a submission.
+incremental local logs matter, or a synchronous tool timeout is likely. Bounded
+foreground copies and writes need neither a job nor an `idempotency_key`: omit
+both parameters. Keys are valid only with `background=true`. Choose a key on the
+initial background submission and reuse it with the identical request on retry;
+independent assignments sharing an access scope need different keys. See
+[background jobs](guides/jobs.md) for submission and recovery semantics.
 
 Execution has no timeout by default in either mode. Set `timeout_seconds` to a
 finite value when the attempt must be bounded.
