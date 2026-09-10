@@ -44,7 +44,7 @@ not automatically installed by the Python package.
 
 - **Configuration rejected:** run `ridge config validate` in operator mode.
   This validates the loader, not backend connectivity.
-- **Wrong task or resources:** inspect the child's effective scope. Check its
+- **Wrong access or resources:** inspect the child's effective scope. Check its
   launch environment/token-file selection; do not clear a failed binding.
 - **Tool approval denied:** the host may have stopped the call before Ridge.
   Host approval and Ridge permission are separate.

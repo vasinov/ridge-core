@@ -30,7 +30,7 @@ the same authoritative configuration; resources may span multiple backends.
   errors. Remote command transports compose the shared helper protocol and
   operations rather than duplicate capability semantics.
 - `registry` owns resource identity and lookup.
-- `_access` owns persisted task scopes, hashed handles, attenuation, lineage
+- `_access` owns persisted access scopes, hashed handles, attenuation, lineage
   visibility, and transactional request checks. `_scope_wire` owns shared CLI/MCP
   scope transport values and startup token-file/environment parsing.
 - `provider` owns provider registration and installed entry-point discovery.

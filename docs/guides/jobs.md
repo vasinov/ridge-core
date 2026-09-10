@@ -1,10 +1,13 @@
 # Background jobs
 
-Execution, data writes, deletion, and copy can run as durable
-background jobs. The operation itself remains in its ordinary CLI command or
+Execution, data writes, deletion, and copy can run as durable background jobs.
+A job records one admitted background attempt at a supported operation. The
+agent or harness judges whether its result completes the assignment.
+The operation itself remains in its ordinary CLI command or
 MCP tool; the `jobs` namespace is only for lifecycle management. Jobs belong to
 the [workspace's managed state](../configuration.md#workspace), not the client
-conversation that submitted them. Reconnect using the same configuration.
+conversation that submitted them. Reconnect using the same configuration and,
+for delegated access, the same active scope handle.
 
 ```console
 $ ridge exec local --background -- python -c 'print("done")'

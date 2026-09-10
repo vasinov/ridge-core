@@ -5,6 +5,11 @@ It chooses each child's resources, permitted operations, and data roots, then
 derives that access through Ridge. The operator establishes the workspace's
 initial ceiling; no per-child configuration edit is needed.
 
+A task is an assignment whose completion the agent or harness judges. An access
+scope records delegated authority, resource views, identity, lineage, and access
+lifecycle. One scope per assignment is a useful convention; a scope can serve
+multiple connections, and disconnecting does not close it.
+
 Ridge owns scope derivation and enforcement. The agent harness owns spawning,
 prompts, dispatch, and connection setup. Start with the
 [runnable handoff example](../examples/delegation.md), or follow the workflow below
@@ -122,7 +127,7 @@ cancellation within its current use **or delegation** grants. A delegate-only
 parent does not gain direct resource use. A caller's own jobs still require use
 grants. Job idempotency keys are local to the submitting scope.
 
-Reconnect with the same handle while the task remains active; connection loss
+Reconnect with the same handle while the access scope remains active; connection loss
 does not close access. Do not create replacement scopes merely because a client
 disconnected. Background jobs remain on the Ridge host: reconnect is not a
 promise that work survives host shutdown. See [jobs](jobs.md).
@@ -135,25 +140,27 @@ Parents can inspect descendant claims; recovery follows the
 
 ## Finish or stop a task
 
-Inspect outcomes and retrieve needed artifacts, then call
-`revoke_scope(identity=scope_id)` or `ridge scope revoke ID`.
+Inspect job results and command exit codes, and retrieve needed artifacts. Then
+close access with `revoke_scope(identity=scope_id)` or `ridge scope revoke ID`.
 The parent needs the scope ID, not the child's bearer token.
 
 Revocation or expiry blocks new operations and result access for the scope and
 its descendants. It does **not** cancel admitted jobs or release reservations.
-When stopping work, request cancellation separately and inspect its outcome;
-close sessions separately where needed. Authorized parents retain access to
-descendant job history after the child closes.
+When stopping early, revoke access to block new admission, request authorized job
+cancellation, and inspect jobs and reservations for unsettled work. Only the owning
+scope can use its session token; parent inspection does not grant that ownership.
+Follow [reservation recovery](coordination.md) for outstanding claims.
+Authorized parents retain access to descendant job history after its scope closes.
 
 Use `list_scopes` / `scope list` and `inspect_scope` / `scope inspect ID` for
-visible task metadata. These never return bearer handles.
+visible scope metadata. These never return bearer handles.
 `config validate` is an operator setup workflow; bound agents use
 `inspect_access` / `access inspect`.
 
 ## When configuration changes
 
 Comments, formatting, mapping order, and unrelated resource edits do not invalidate
-task scopes. Current policy can reduce effective access; restoring policy can
+access scopes. Current policy can reduce effective access; restoring policy can
 restore an issued grant but cannot add one. Broader task access needs fresh issuance.
 
 Changing a granted resource's provider configuration, provider name, or lock

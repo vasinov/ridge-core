@@ -43,9 +43,9 @@ inspect their effective authority with `access inspect`.
 stdout. See [configuration validation](configuration.md#validate-an-inventory)
 for the output contract, trusted-provider boundary, and sensitive diagnostics.
 
-Bind a task at startup with `RIDGE_SCOPE_TOKEN` or global `--scope-token-file PATH`
-(the explicit file wins). Scope handles are distinct from lock tokens. Scope
-creation returns its bearer handle once; subsequent inspection omits it.
+Bind the CLI to an access scope at startup with `RIDGE_SCOPE_TOKEN` or global
+`--scope-token-file PATH` (the explicit file wins). Scope handles are distinct from
+lock tokens. Scope creation returns its bearer handle once; subsequent inspection omits it.
 See [task delegation](guides/delegation.md) for
 structured grants, expiry, reconnect, and revocation.
 

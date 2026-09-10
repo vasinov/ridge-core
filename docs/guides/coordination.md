@@ -8,10 +8,10 @@ same worker. Ridge provides cooperative resource locks across CLI and MCP caller
 within a [workspace](../configuration.md#workspace), so each agent does not need
 to invent backend-specific coordination glue.
 
-Ordinary calls protect one operation at a time. A multi-step task needs an explicit
-session: for example, reserve a worker before copying inputs, keep it reserved
-while running the program, and retrieve its output before releasing it. Without
-that session, another agent could acquire the worker between those calls. Managed
+Ordinary calls protect one operation at a time. To protect a shared resource
+across calls, use an explicit lock session: reserve a worker before copying inputs,
+keep it reserved while running the program, and retrieve its output before release.
+Without that session, another agent could acquire the worker between those calls. Managed
 caller sessions handle renewal during long operations and model reasoning.
 
 S3 read/stat/write/delete and copy endpoints lock exact objects. Supported filesystem

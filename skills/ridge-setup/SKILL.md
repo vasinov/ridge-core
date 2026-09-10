@@ -1,6 +1,6 @@
 ---
 name: ridge-setup
-description: Prepare or repair a Ridge workspace configuration, validate explicit access, or derive and bind delegated task scopes using installed Ridge. Use for setup and task-access handoff, not infrastructure provisioning or routine resource operations.
+description: Prepare or repair a Ridge workspace configuration, validate explicit access, or derive and bind delegated access scopes using installed Ridge. Use for setup and task-access handoff, not infrastructure provisioning or routine resource operations.
 ---
 
 # Ridge setup
@@ -55,9 +55,13 @@ same skill; direct MCP remains available without a plugin.
 In the child connection, call `access inspect`/`inspect_access` and verify the
 expected scope ID and effective grants before work. Reconnect with that same handle
 for ongoing tasks; do not recreate scopes just because a connection ended. Use
-scope IDs for inspection and revocation. On completion, the parent revokes the task.
-Revocation blocks access but does not cancel running jobs or release held locks;
-inspect/cancel work and close reservations separately when required. Do not clear an
+scope IDs for inspection and revocation. Inspect job results, command exit codes,
+and needed artifacts before the parent revokes the access scope.
+For an early stop, revoke access to block new admission, request authorized job
+cancellation, and report unsettled jobs and reservations. Revocation does not
+cancel admitted work or release reservations. Parents can inspect descendant
+claims but cannot borrow a child's session token; follow the coordination
+contract for recovery. Do not clear an
 invalid or closed binding to regain operator access.
 
 A delegate-only parent may inspect results/logs and cancel descendant jobs within

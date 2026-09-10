@@ -53,9 +53,10 @@ trusted-provider boundaries.
 
 ## Binding and visibility
 
-CLI and local MCP connections use operator authority unless bound to a task
-handle at startup. Handles identify task authority, not permanent agent identities.
-Invalid bindings fail closed.
+CLI and local MCP connections use operator authority unless bound to an access
+scope at startup. A bearer handle binds the connection to that scope; reconnecting
+with it retains the scope's identity and lineage. Current policy still applies,
+and invalid bindings fail closed.
 
 Operator discovery reports every configured resource, supported and allowed
 operations, and provider properties. Scoped discovery shows only granted resource
@@ -69,12 +70,13 @@ retrieving resource data still needs the corresponding use grant.
 
 ## Authority is not coordination
 
-An access scope grants permissions; a lock session reserves resources; an action
-footprint describes interference. Creating access does not acquire locks, and a
+An access scope grants permissions; a lock session reserves declared operations
+and optional file, tree, or object targets across calls; an action footprint
+describes interference. Creating access does not acquire locks, and a
 lock token does not grant permission. Scoped views preserve canonical resource
 identity and share workspace coordination.
 
-Task expiry/revocation closes future access, not already-admitted work.
+Scope expiry/revocation closes future access, not already-admitted work.
 Cancellation and reservation release are separate actions. See
 [delegation lifecycle](../guides/delegation.md#finish-or-stop-a-task).
 
