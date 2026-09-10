@@ -45,7 +45,7 @@ Follow the contributor instructions' documentation-impact review with each chang
 update current contracts in their owning pages, consolidate repeated explanations,
 and preserve actionable safety and recovery guidance. Review the relevant skills
 and harness instructions too. The [delegation example](examples/delegation.md)
-has process-level regression coverage; the README's scope grant is exercised
+has process-level regression coverage; the delegation guide's read-only scope is exercised
 against a disposable workspace, not checked only for matching text.
 
 Client adapters and plugin templates live in `integrations/`. The plugin builder
