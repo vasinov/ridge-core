@@ -25,6 +25,7 @@ from ridge.errors import (
     PathNotFoundError,
 )
 from ridge.model import JobScope, JobStatus, Operation
+from tests.support.jobs import wait_for_job
 
 
 def _service(tmp_path: Path, *, permissions: str = "", extra: str = "") -> RidgeService:
@@ -44,16 +45,6 @@ def _scope(resource: str = "a", operation: Operation = Operation.DATA_WRITE) -> 
 
 def _token(value: dict[str, object]) -> str:
     return str(value["token"])
-
-
-def _wait(service: RidgeService, identity: str) -> JobStatus:
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        status = service.inspect_job(identity).status
-        if status in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.LOST}:
-            return status
-        time.sleep(0.02)
-    raise AssertionError("job did not finish")
 
 
 def test_default_state_and_alias_configuration(tmp_path: Path) -> None:
@@ -249,7 +240,7 @@ def test_background_completion_under_closed_session(tmp_path: Path) -> None:
     session = service.acquire_locks([_scope()])
     job = service.with_lock(_token(session)).submit_write("a", "background", b"yes")
     service.release_locks(_token(session))
-    assert _wait(service, job.id) is JobStatus.SUCCEEDED
+    assert wait_for_job(service, job.id) is JobStatus.SUCCEEDED
     assert service.inspect_lock(job.id)["status"] == "released"
     service.write_data("b", "after", b"yes")
 

@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Literal, cast
 from unittest.mock import Mock
@@ -38,6 +37,7 @@ from ridge.errors import (
 from ridge.model import JobStatus
 from ridge.registry import ResourceRegistry
 from ridge.resource import ResourceCapabilities
+from tests.support.jobs import wait_for_job
 
 
 class _Helper:
@@ -119,7 +119,7 @@ def test_delete_job_failure_and_policy_visibility(tmp_path: Path) -> None:
     target.mkdir()
     (target / "entry").write_text("keep")
     job = service.submit_delete("local", "tree")
-    assert _wait(service, job.id) is JobStatus.FAILED
+    assert wait_for_job(service, job.id, timeout=10) is JobStatus.FAILED
     assert "recursive" in str(service.inspect_job(job.id).error)
     assert (target / "entry").read_text() == "keep"
     config.write_text(config.read_text().replace("[data.delete]", "[data.stat]"))
@@ -186,16 +186,6 @@ def _config(tmp_path: Path, grants: str = "data.delete") -> Path:
     return config
 
 
-def _wait(service: RidgeService, identity: str) -> JobStatus:
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        status = service.inspect_job(identity).status
-        if status not in {JobStatus.STARTING, JobStatus.RUNNING}:
-            return status
-        time.sleep(0.02)
-    raise AssertionError("delete job did not finish")
-
-
 def test_authorization_precedes_effects(tmp_path: Path) -> None:
     resource = LocalResource("local", tmp_path)
     service = RidgeService(ResourceRegistry([resource]), AuthorizationPolicy.exact({}))
@@ -224,7 +214,7 @@ def test_background_results_deduplication_and_claims(tmp_path: Path) -> None:
     with pytest.raises(LockConflictError):
         service.submit_delete("local", "file")
     job = service.with_lock(token).submit_delete("local", "file", idempotency_key="delete-once")
-    assert _wait(service, job.id) is JobStatus.SUCCEEDED
+    assert wait_for_job(service, job.id, timeout=10) is JobStatus.SUCCEEDED
     assert service.inspect_job(job.id).result == {"outcome": "deleted"}
     assert job.scopes == (JobScope("local", Operation.DATA_DELETE),)
     (tmp_path / "data" / "file").write_bytes(b"new entry")
@@ -311,7 +301,9 @@ def test_cli_delete_and_background(tmp_path: Path) -> None:
     submitted = runner.invoke(app, args + ["--recursive", "--background"])
     assert submitted.exit_code == 0, submitted.output
     identity = submitted.output.strip().split()[1]
-    assert _wait(RidgeService.from_config(config), identity) is JobStatus.SUCCEEDED
+    assert (
+        wait_for_job(RidgeService.from_config(config), identity, timeout=10) is JobStatus.SUCCEEDED
+    )
     missing = runner.invoke(app, args)
     assert json.loads(missing.output) == {"outcome": "missing"}
 

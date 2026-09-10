@@ -17,6 +17,13 @@ documentation under `docs`. Read the root contributor instructions and
 [architecture](architecture.md) before changing contracts. The public checkout
 is sufficient; maintainer-local planning or environment files are not required.
 
+Job tests separate public workflows (`test_jobs.py`), worker validation
+(`test_job_worker.py`), recovery and ownership (`test_job_recovery.py`), and process
+termination (`test_job_process.py`). Shared job setup and bounded terminal-state
+waiting live in `tests/support/jobs.py`; keep scenario-specific configuration and
+assertions in their tests. Use `uv run pytest --durations=15` to identify slow tests
+before changing their timing or coverage.
+
 Edit ephemeral helpers in `src/ridge/backends/_scripts` as ordinary Python source;
 linting and type checking cover these files. Keep them standard-library-only and
 safe to import without dispatch. After changing source delivery, verify that the
