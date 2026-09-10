@@ -34,7 +34,9 @@ if page.next_cursor is not None:
     page = ridge.list_jobs(limit=20, cursor=page.next_cursor)
 ```
 
-Use `ridge.inspect_job(job_id)` for results, errors, and cancellation intent.
+Use `ridge.inspect_job(job_id)` for results, errors, cancellation intent, and
+`Job.access_scope_id` (the issuing scope ID, or `None` for operator submissions).
+See [job ownership](guides/jobs.md#supervising-delegated-work).
 For execution, inspect `result["exit_code"]` before using the outputs: job status
 `succeeded` means the operation completed, even if the command returned nonzero. See
 [job discovery](guides/jobs.md#discovering-jobs) for ordering, bounds, and policy changes.

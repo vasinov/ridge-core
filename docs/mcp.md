@@ -77,7 +77,9 @@ of UTF-8 diagnostic text, before frontend/protocol prefixes, with explicit trunc
 Resource discovery grows with the configured inventory. `list_jobs(limit=50,
 cursor=None)` returns authorized summaries in a `jobs`/`next_cursor` page,
 newest first; limits are 1–200. Summaries omit results, errors, and cancellation
-intent. Use `inspect_job` for those details and bounded `read_job_logs` pages to
+intent and issuing access-scope identity. Full job responses include `access_scope_id`
+(`null` for operator submissions); use it to corroborate manifest ownership.
+Use `inspect_job` for full details and bounded `read_job_logs` pages to
 reconnect. See [job discovery](guides/jobs.md#discovering-jobs) for cursor and
 changing-history semantics.
 

@@ -606,4 +606,5 @@ class JobManager:
             error=row["error"],
             result=cast(dict[str, object] | None, result),
             cancellation_requested=bool(row["cancellation_requested"]),
+            access_scope_id=row["access_scope_id"] or None,
         )

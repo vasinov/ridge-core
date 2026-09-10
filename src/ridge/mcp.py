@@ -224,6 +224,10 @@ class JobResult(JobSummaryResult):
     error: str | None
     result: dict[str, object] | None
     cancellation_requested: bool
+    access_scope_id: str | None = Field(
+        default=None,
+        description="Issuing access-scope ID; null for operator submissions. Identity, not a bearer token.",
+    )
 
 
 class JobsResult(_WireModel):
@@ -378,6 +382,7 @@ def _job_result(job: Job) -> JobResult:
         error=job.error,
         result=job.result,
         cancellation_requested=job.cancellation_requested,
+        access_scope_id=job.access_scope_id,
     )
 
 

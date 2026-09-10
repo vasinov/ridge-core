@@ -406,7 +406,9 @@ decision before page filling. Terminal results are not loaded for discovery.
 Opaque cursors identify a position and resolved state-directory path, not a
 snapshot or permission grant. Newer jobs require restarting discovery, while
 status and authorization remain live. Only returned jobs undergo lifecycle
-reconciliation. Full results, errors, and cancellation intent belong to inspection.
+reconciliation. Full results, errors, cancellation intent, and the persisted issuing
+`access_scope_id` belong to inspection. Operator ownership is exposed as null;
+the field does not change authorization or the retained assignment manifest's role.
 Pagination does not impose retention or bound the total scan through hidden jobs.
 
 States are `starting`, `running`, `succeeded`, `failed`, `cancelled`, and

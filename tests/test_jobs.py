@@ -27,6 +27,8 @@ def test_background_write_stages_input_and_survives_caller_return(tmp_path: Path
     assert wait_for_job(service, job.id) is JobStatus.SUCCEEDED
     assert (tmp_path / "nested" / "output.bin").read_bytes() == b"ridge\x00"
     inspected = service.inspect_job(job.id)
+    assert job.access_scope_id is None
+    assert inspected.access_scope_id is None
     assert inspected.kind is JobKind.WRITE
     assert inspected.scopes == (JobScope("local", Operation.DATA_WRITE),)
     assert inspected.result == {"bytes_written": 6}

@@ -161,6 +161,7 @@ class Job:
     error: str | None
     result: dict[str, object] | None
     cancellation_requested: bool
+    access_scope_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

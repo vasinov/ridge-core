@@ -159,6 +159,9 @@ def test_jobs_are_owned_and_idempotency_is_scope_local(
     ancestor = RidgeService.from_config(path, scope_token=parent.token)
     operator = RidgeService.from_config(path)
     first = one.submit_write("a", "job", b"yes", idempotency_key="same")
+    assert first.access_scope_id == left.scope.id
+    assert one.inspect_job(first.id).access_scope_id == left.scope.id
+    assert operator.inspect_job(first.id).access_scope_id == left.scope.id
     assert one.submit_write("a", "job", b"yes", idempotency_key="same").id == first.id
     assert two.list_jobs().jobs == ()
     for method in (two.inspect_job, two.cancel_job):
@@ -166,12 +169,14 @@ def test_jobs_are_owned_and_idempotency_is_scope_local(
             method(first.id)
     with pytest.raises(ScopeAccessError, match="unavailable"):
         two.read_job_log(first.id, "stdout")
-    assert ancestor.inspect_job(first.id).id == first.id
-    assert ancestor.cancel_job(first.id).status is JobStatus.CANCELLED
+    assert ancestor.inspect_job(first.id).access_scope_id == left.scope.id
+    cancelled = ancestor.cancel_job(first.id)
+    assert cancelled.status is JobStatus.CANCELLED
+    assert cancelled.access_scope_id == left.scope.id
     second = two.submit_write("a", "job", b"yes", idempotency_key="same")
     assert second.id != first.id
     store.revoke(loaded, right.scope.id)
     with pytest.raises(ScopeAccessError, match="revoked"):
         two.inspect_job(second.id)
-    assert ancestor.inspect_job(second.id).id == second.id
+    assert ancestor.inspect_job(second.id).access_scope_id == right.scope.id
     assert operator.cancel_job(second.id).status is JobStatus.CANCELLED

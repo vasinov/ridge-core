@@ -106,7 +106,8 @@ all three direct-write forms buffer the payload. Use `copy` for large files.
 
 `jobs list` returns a JSON page (`jobs`, `next_cursor`) of authorized summaries,
 newest first, with a default limit of 50 and maximum of 200. Pass `--cursor TOKEN`
-to continue. `jobs inspect` emits JSON including results and
+to continue. `jobs inspect` emits JSON including `access_scope_id` (the issuing
+scope ID, or `null` for operator submissions), results and
 errors; a `succeeded` execution
 job can still have a nonzero `result.exit_code`. See [Background jobs](guides/jobs.md)
 for log paging, retention, semantic configuration checks, and cancellation limits.

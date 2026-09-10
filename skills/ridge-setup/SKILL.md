@@ -55,7 +55,10 @@ same skill; direct MCP remains available without a plugin.
 In the child connection, call `access inspect`/`inspect_access` and verify the
 expected scope ID and effective grants before work. Reconnect with that same handle
 for ongoing tasks; do not recreate scopes just because a connection ended. Use
-scope IDs for inspection and revocation. Inspect job results, command exit codes,
+scope IDs for inspection and revocation. Corroborate saved job ownership using
+the full job record's `access_scope_id`; see
+[job ownership](https://vasinov.github.io/ridge-core/guides/jobs/#supervising-delegated-work).
+Inspect job results, command exit codes,
 and needed artifacts before the parent revokes the access scope.
 For an early stop, revoke access to block new admission, request authorized job
 cancellation, and report unsettled jobs and reservations. Revocation does not

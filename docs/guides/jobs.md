@@ -58,6 +58,13 @@ job ownership and idempotency keys belong to the submitting access scope. A call
 sees only its own subtree. Own jobs require current use grants; descendant jobs
 allow current use or delegation grants for every underlying operation. Delegation
 therefore permits supervision (including logs/results and cancellation), not direct use.
+Full job records expose `access_scope_id`, the issuing scope's stable ID, or `null`
+for operator submissions. Inspection lets a parent corroborate a retained
+assignment-to-scope/job manifest. This identity grants no access and remains the
+original issuer after scope revocation; existing subtree authorization still applies.
+The `scopes` field describes resource/operation pairs, not access-scope identity.
+Submission and cancellation responses that return full job records include the
+same field; discovery summaries omit it.
 Closing a scope blocks its future submissions and result access, not work already
 admitted; an authorized ancestor can inspect or cancel descendant jobs separately.
 

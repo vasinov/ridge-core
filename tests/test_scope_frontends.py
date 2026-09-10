@@ -130,3 +130,61 @@ async def test_mcp_scope_tools_and_separate_stdio_binding(config: Path) -> None:
                 assert not closed.is_error
                 denied = await child.call_tool("list_resources", {})
                 assert denied.is_error and token not in str(denied)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("actor", ["unscoped", "operator", "parent", "child", "sibling"])
+async def test_full_job_provenance_through_cli_and_mcp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, actor: str
+) -> None:
+    from unittest.mock import Mock
+
+    from ridge import AccessGrant, Operation
+
+    monkeypatch.delenv("RIDGE_SCOPE_TOKEN", raising=False)
+    monkeypatch.setattr("ridge.jobs.subprocess.Popen", Mock())
+    config = tmp_path / "ridge.yaml"
+    config.write_text(
+        "resources: {data: {provider: local, root: .}}\ndelegation: {data: [data.write]}\n"
+    )
+    operator = RidgeService.from_config(config)
+    ops = frozenset({Operation.DATA_WRITE})
+    parent = operator.create_scope([AccessGrant("data", frozenset(), ops)])
+    supervising = RidgeService.from_config(config, scope_token=parent.token)
+    child = supervising.create_scope([AccessGrant("data", ops)])
+    sibling = supervising.create_scope([AccessGrant("data", ops)])
+    submitter = (
+        operator
+        if actor == "unscoped"
+        else RidgeService.from_config(config, scope_token=child.token)
+    )
+    job = submitter.submit_write("data", "output", b"test")
+    operator.cancel_job(job.id)
+    token = {"parent": parent.token, "child": child.token, "sibling": sibling.token}.get(actor)
+    expected = None if actor == "unscoped" else child.scope.id
+    service = RidgeService.from_config(config, scope_token=token)
+    cli = CliRunner().invoke(
+        app,
+        ["--config", str(config), "jobs", "inspect", job.id],
+        env={"RIDGE_SCOPE_TOKEN": token} if token else {},
+    )
+    async with Client(create_server(service)) as client:
+        result = await client.call_tool("inspect_job", {"job_id": job.id})
+        listing = await client.call_tool("list_jobs", {})
+        tools = await client.list_tools()
+    if actor == "sibling":
+        assert cli.exit_code == 2
+        assert result.is_error
+        assert child.scope.id not in cli.output + str(result)
+    else:
+        assert cli.exit_code == 0, cli.output
+        assert json.loads(cli.stdout)["access_scope_id"] == expected
+        assert not result.is_error and result.structured_content is not None
+        assert result.structured_content["access_scope_id"] == expected
+    assert listing.structured_content is not None
+    assert "access_scope_id" not in str(listing.structured_content)
+    inspection = next(tool for tool in tools.tools if tool.name == "inspect_job")
+    assert inspection.output_schema is not None
+    assert "access_scope_id" in inspection.output_schema["properties"]
+    for handle in (parent.token, child.token, sibling.token):
+        assert handle not in cli.output + str(result) + str(listing)
