@@ -44,7 +44,7 @@ jobs; the Ridge host must remain available for execution.
 **Coordinate shared updates.** Publish different files concurrently in supported
 filesystem cases, or reserve files, trees, and exact S3 objects across multi-step
 updates. Conflicting participating operations coordinate independently of their
-access scopes. See the [coordination contract](https://github.com/vasinov/ridge-core/blob/main/docs/guides/coordination.md).
+access scopes. See the [coordination contract](https://vasinov.github.io/ridge-core/guides/coordination/).
 
 ## Install and connect
 
