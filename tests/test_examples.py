@@ -1,4 +1,4 @@
-"""Keep the published CSV assets runnable with the documented local workflow."""
+"""Keep the published delegation snippet and CSV workflow runnable."""
 
 from __future__ import annotations
 
@@ -9,21 +9,28 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
-from ridge import AccessGrant, Operation, RidgeService
+from ridge import AccessGrant, AuthorizationDeniedError, Operation, RidgeService
 
 
-def test_readme_scope_example(tmp_path: Path) -> None:
+def test_delegation_guide_read_only_scope(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
-    blocks = re.findall(r"```python\n(.*?)```", (root / "README.md").read_text(), re.DOTALL)
+    guide = (root / "docs/guides/delegation.md").read_text()
+    section = guide.split("## Create task access\n", 1)[1].split("\n## ", 1)[0]
+    blocks = re.findall(r"```python\n(.*?)```", section, re.DOTALL)
+    assert len(blocks) == 1, "Expected one Python scope-creation example in the delegation guide"
     call = ast.parse(blocks[0]).body[0]
     assert isinstance(call, ast.Expr) and isinstance(call.value, ast.Call)
-    grants: list[dict[str, Any]] = ast.literal_eval(call.value.keywords[0].value)
-    policy = {grant["resource"]: grant["operations"] for grant in grants}
-    for name in policy:
-        (tmp_path / name).mkdir()
-    (tmp_path / "results/comparison/a").mkdir(parents=True)
+    assert isinstance(call.value.func, ast.Name) and call.value.func.id == "create_scope"
+    grants: list[dict[str, Any]] = ast.literal_eval(
+        next(keyword.value for keyword in call.value.keywords if keyword.arg == "grants")
+    )
+    policy = {"inputs": ["data.read", "data.stat", "data.write"]}
+    (tmp_path / "inputs").mkdir()
+    source = tmp_path / "inputs/sample.txt"
+    source.write_bytes(b"original")
     config = tmp_path / "ridge.yaml"
     config.write_text(
         yaml.safe_dump(
@@ -40,14 +47,20 @@ def test_readme_scope_example(tmp_path: Path) -> None:
             AccessGrant(
                 grant["resource"],
                 frozenset(Operation(op) for op in grant["operations"]),
+                frozenset(Operation(op) for op in grant.get("delegation", [])),
                 data_root=grant.get("data_root"),
             )
             for grant in grants
         ]
     )
     child = RidgeService.from_config(config, scope_token=issued.token)
-    child.write_data("results", "metrics.json", b'{"score": 10}')
-    assert (tmp_path / "results/comparison/a/metrics.json").read_bytes() == b'{"score": 10}'
+    assert child.read_data("inputs", "sample.txt") == b"original"
+    assert child.stat_data("inputs", "sample.txt").size == len(b"original")
+    with pytest.raises(AuthorizationDeniedError):
+        child.write_data("inputs", "sample.txt", b"changed")
+    with pytest.raises(AuthorizationDeniedError):
+        child.create_scope([AccessGrant("inputs", frozenset({Operation.DATA_READ}))])
+    assert source.read_bytes() == b"original"
     parent.revoke_scope(issued.scope.id)
 
 
