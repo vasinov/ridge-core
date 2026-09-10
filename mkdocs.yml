@@ -42,6 +42,7 @@ nav:
       - Overview: integrations.md
       - Client setup: integrations/clients.md
       - Agent-led handoff: integrations/agents.md
+      - Archive experiment: integrations/archive-experiment.md
       - LangChain: integrations/langchain.md
       - Local plugins: integrations/plugins.md
   - Delegating work: guides/delegation.md

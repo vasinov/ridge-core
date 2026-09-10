@@ -39,6 +39,10 @@ host passes the token to children through environment binding, never their
 prompts or command-line arguments. Do not enable transcript/debug logging for
 this example. Normal host/provider data handling still applies.
 
+The [archive workflow experiment](archive-experiment.md) extends this pattern to
+local, Docker and AWS S3 resources, comparing native tools, shared access and
+scoped access with inspected artifacts and fresh-parent recovery.
+
 ## Adapt the host
 
 Keep three responsibilities separate:

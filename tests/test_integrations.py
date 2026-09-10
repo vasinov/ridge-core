@@ -7,6 +7,7 @@ import sys
 import tomllib
 from pathlib import Path
 from types import ModuleType
+from typing import cast
 
 import pytest
 
@@ -148,3 +149,34 @@ def test_agent_host_lifecycle(
     service = RidgeService.from_config(workspace / "ridge.yaml")
     assert all(scope.status == "revoked" for scope in service.list_scopes().scopes)
     assert not service.list_locks()["entries"]
+
+
+def test_archive_host_keeps_unscoped_and_invalid_bindings_distinct(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "path", [str(ROOT / "integrations"), *sys.path])
+    host = module("archive_experiment")
+    monkeypatch.setenv("RIDGE_SCOPE_TOKEN", "ambient-parent-handle")
+    environments: list[dict[str, str]] = []
+
+    def run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        environments.append(cast(dict[str, str], environment))
+        event = {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": '{"token":"child-handle"}'},
+        }
+        return subprocess.CompletedProcess([], 0, json.dumps(event) + "\n", "")
+
+    monkeypatch.setattr(host.subprocess, "run", run)
+    config = tmp_path / "config.yaml"
+    assert host.invoke(tmp_path, "unscoped", config, "test") == {"token": "child-handle"}
+    host.invoke(tmp_path, "scoped", config, "test", "explicit-child-handle")
+    assert "RIDGE_SCOPE_TOKEN" not in environments[0]
+    assert environments[1]["RIDGE_SCOPE_TOKEN"] == "explicit-child-handle"
+    with pytest.raises(ValueError, match="must not be empty"):
+        host.invoke(tmp_path, "invalid", config, "test", "")
+    assert len(environments) == 2
+    for path in tmp_path.iterdir():
+        assert "handle" not in path.read_text()

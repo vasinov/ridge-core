@@ -35,6 +35,9 @@ one separate worker process group; built-in local copy helpers stay in that grou
 Use an idempotency key when a caller may lose the submission response and retry.
 The same key and identical request return the existing job. Reusing the key for
 different content or parameters fails.
+Keys belong to the submitting access scope. Independent assignments sharing an
+operator connection need distinct keys; separately scoped children can reuse the
+same task-local key without colliding.
 Concurrent preparation of the same key is serialized separately from resource claims;
 after 60 seconds a contender reports a conflict and can retry with that same key.
 
