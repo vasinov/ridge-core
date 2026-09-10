@@ -14,9 +14,9 @@ while running the program, and retrieve its output before releasing it. Without
 that session, another agent could acquire the worker between those calls. Managed
 caller sessions handle renewal during long operations and model reasoning.
 
-S3 read/stat/write/delete and copy endpoints lock exact objects, so operations on
-different keys can overlap. Filesystem operations and compute still lock whole
-resources: two writes to different files in one resource conflict. Shared reads
+S3 read/stat/write/delete and copy endpoints lock exact objects. Supported filesystem
+operations lock file or tree paths, so writes to different files in the same
+directory can overlap. Compute retains whole-resource protection. Shared reads
 can coexist. Use matching lock keys for aliases or overlapping roots.
 
 ## Isolation and coordination work together
@@ -52,12 +52,15 @@ immediately on contention. Background jobs are not queued waiting for claims.
 Deletion sessions must declare `data.delete`, including for background submission;
 `data.write` ownership alone does not authorize or declare deletion.
 
-Explicit sessions reserve a complete set of resource/operation pairs atomically.
-Reservations remain whole-resource even for S3 and scoped data views. Independent
-object operations within the same session may overlap, but outsiders still conflict
-with its whole-resource reservation. There is no narrow reservation API.
+Explicit sessions reserve a complete set of resource/operation pairs and optional
+paths atomically. Omitted paths reserve whole resources, including for scoped data
+views. A filesystem path covers that entry and its descendants; an S3 path covers
+one exact object, not a key prefix. Independent operations within a session may
+overlap, while outsiders must respect the complete reservation.
 Every pair must be supported and authorized before acquisition. Calls recheck
 authorization and the session's declared operations. Tokens do not grant authority.
+The requests contribute to one combined effect reservation; operation declarations
+remain resource-specific. Paths describe reserved effects, not per-path permission grants.
 Conflicting calls within a session also conflict. There are no incremental claims,
 upgrades, or nested sessions. Acquisition supports bounded waiting up to 60 seconds.
 
@@ -117,10 +120,45 @@ unknown, or incompatible mappings keep the entire domain whole-resource. Unsuppo
 actions also retain whole-domain claims. No extra configuration or caller-supplied
 footprint is needed. Permissions are checked independently of this planning.
 
+Local, Docker, and SSH use hierarchical filesystem coordinates. A shared directory
+claim protects listing and metadata observations against descendant writes; a tree
+replacement or recursive deletion conflicts with all work beneath that tree.
+Directory observations are deliberately conservative: even a nested content change
+can conflict. File publication protects the full staging, replacement and cleanup
+lifetime. Direct access to `.ridge-*` staging names takes broad claims, so those
+temporary siblings cannot bypass publication ownership. Initial narrow coordinates
+use ASCII letters, digits, dots, underscores and hyphens, with no trailing dot;
+case-folding conservatively coordinates differently cased spellings. Other names
+retain broad locking rather than assuming filesystem-specific Unicode or alias rules.
+
+Filesystem candidates are lexical. Under their claims, Ridge checks that resolution
+does not traverse symlinks or nested mounts, that existing regular files have no
+hard-link aliases, and that parents already exist. Trees are checked without following
+links, up to 4,096 entries. Symlinks, hard links, nested mounts, special files, larger
+trees, parent creation, `..` paths, and unsupported platforms require broad protection.
+Narrowing currently supports Linux and macOS with matching configured roots and
+transport coordinates across the entire lock domain. Different configured roots,
+mixed transports, and incompatible aliases fall back broadly; derived data roots
+within a compatible domain retain their full root chain.
+
+Validation precedes effects. Ordinary calls release an unsuitable candidate before
+a fresh whole-domain admission; they do not upgrade a held claim. An explicit path
+reservation that cannot be established fails instead of silently reserving more.
+Calls needing broader effects than their session covers also fail: prepare missing
+parents before reserving individual files, or choose a whole-resource session.
+
 Background jobs persist their admitted footprints. Before dispatch a worker checks
 that its current plan fits those claims; changed coverage fails instead of silently
 acquiring more locks. Uncertain operations retain their original footprint, so
 unrelated objects can proceed while the affected target remains blocked.
+Filesystem submission validates candidates under temporary claims outside database
+transactions. Final job admission remains atomic and workers revalidate under the
+persisted claims. A changed mapping can therefore fail a job before effects; the
+worker never enlarges its claims. Idempotent replay returns the existing job before
+attempting new filesystem preparation.
+If a preparation probe is unavailable, background admission uses broad claims and
+leaves the actual availability failure to the durable attempt. A narrow caller
+reservation still cannot be exceeded.
 
 Lock inspection returns `claims` as a list, for example:
 
@@ -132,6 +170,33 @@ These canonical coordinates can include parent prefixes, not just view-relative
 paths. Treat managed state and inspection output as operational metadata.
 
 ## Example session
+
+For parallel publication or read–modify–write, reserve the individual file:
+
+```python
+from ridge import LockRequest, Operation
+
+requests = [
+    LockRequest("project-files", Operation.DATA_READ, "results/manifest.json"),
+    LockRequest("project-files", Operation.DATA_WRITE, "results/manifest.json"),
+]
+with ridge.lock_session(requests) as session:
+    previous = session.service.read_data("project-files", "results/manifest.json")
+    updated = update_manifest(previous)  # Application-owned transformation.
+    session.service.write_data("project-files", "results/manifest.json", updated)
+```
+
+Other agents can publish different files in `results/` during that sequence.
+Reserve a directory path for a tree, or declare several read paths together to
+keep multiple inputs stable. Every operation still needs its declared permission;
+MCP inline reads also require `data.stat` on the reserved path.
+
+CLI uses `locks acquire RESOURCE:OPERATION:PATH ...`; MCP uses
+`scopes: [{"resource": "project-files", "operation": "data.write", "path": "results/a.json"}]`.
+Omit the path for the existing whole-resource workflow below. A parent must not hold
+an exclusive reservation while waiting for a child that needs the same target:
+scope-bound session tokens are not transferable between tasks. IDE edits and
+arbitrary shell effects are not inferred from file reservations; compute stays broad.
 
 ```bash
 ridge locks acquire worker:data.read worker:data.stat worker:data.write worker:compute.exec

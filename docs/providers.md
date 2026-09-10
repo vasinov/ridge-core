@@ -92,6 +92,16 @@ back; malformed results fail. Oversize plans conservatively collapse to whole-do
 claims (64 claims/action, 32 components/scope, 16 KiB encoded scope).
 Existing providers without this capability keep whole-resource locking.
 
+Optional `footprint_guard=implementation` requires `footprints` and implements
+`FootprintGuardCapability.validate_footprint(path, roots) -> bool`. Ridge calls it
+only while holding the complete candidate claims, before dispatch and outside a
+database transaction. It may perform read-only backend inspection, but must never
+modify data or follow an unprotected alias. Return `False` when broader protection
+is required; malformed responses fail. Broad claims need no guard. Every mutable
+dependency of successful validation must remain protected until the operation ends.
+Remote guards use bounded helper calls. See the built-in filesystem coverage and
+fallback rules in [coordination](guides/coordination.md#action-defined-footprints).
+
 `ridge.conformance` contains reusable destructive checks for compute,
 filesystem, storage, deletion, and single-file transfer implementations. Run them only
 against disposable roots, prefixes, or test resources.

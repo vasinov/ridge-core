@@ -139,6 +139,17 @@ class JobScope:
 
 
 @dataclass(frozen=True, slots=True)
+class LockRequest(JobScope):
+    """Reserve an operation at a file/tree path, or the whole resource when omitted."""
+
+    path: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.path is not None and (not self.path or "\0" in self.path):
+            raise ValueError("reservation path must be nonempty and contain no NUL bytes")
+
+
+@dataclass(frozen=True, slots=True)
 class Job:
     id: str
     kind: JobKind

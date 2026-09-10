@@ -55,6 +55,13 @@ class HelperOperations:
     def __init__(self, transport: HelperTransport) -> None:
         self._transport = transport
 
+    def validate_footprint(self, relatives: tuple[str, ...]) -> bool:
+        response = self._invoke("footprint", {"relatives": relatives})
+        valid = response.get("valid")
+        if type(valid) is not bool:
+            raise ExecutionError("invalid footprint validation result from Ridge helper")
+        return valid
+
     def _invoke(
         self,
         operation: str,

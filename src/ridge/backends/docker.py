@@ -7,6 +7,7 @@ from copy import copy
 from pathlib import PurePosixPath
 from typing import cast
 
+from ridge.backends._footprints import FilesystemFootprints
 from ridge.backends._helper import (
     HelperOperations,
     HelperTransportResult,
@@ -56,12 +57,18 @@ class DockerResource:
         self._operations = HelperOperations(self)
         self._data_roots: tuple[str, ...] = ()
         self._transfer = ProcessTransferOperations(self.name, self._transfer_command)
+        footprints = FilesystemFootprints(
+            ("docker-filesystem", docker_executable, container, python_executable, self.root),
+            self._operations.validate_footprint,
+        )
         self.capabilities = ResourceCapabilities(
             compute=self,
             filesystem=self,
             transfer=self,
             delete=self,
             data_views=self,
+            footprints=footprints,
+            footprint_guard=footprints,
         )
 
     def validate_data_root(self, root: str) -> None:

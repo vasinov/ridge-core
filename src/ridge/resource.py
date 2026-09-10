@@ -136,6 +136,13 @@ class DataViewCapability(Protocol):
     def open_data_view(self, roots: tuple[str, ...]) -> ResourceCapabilities: ...
 
 
+@runtime_checkable
+class FootprintGuardCapability(Protocol):
+    """Read-only validation under the complete candidate claims, before effects."""
+
+    def validate_footprint(self, path: str, roots: tuple[str, ...]) -> bool: ...
+
+
 def _validate_capability(name: str, implementation: object, contract: type[object]) -> None:
     if not isinstance(implementation, contract):
         raise TypeError(f"{name} capability does not implement its Ridge contract")
@@ -152,10 +159,15 @@ class ResourceCapabilities:
     delete: DeleteCapability | None = None
     data_views: DataViewCapability | None = None
     footprints: FootprintCapability | None = None
+    footprint_guard: FootprintGuardCapability | None = None
 
     def __post_init__(self) -> None:
         if self.footprints is not None:
             _validate_capability("footprints", self.footprints, FootprintCapability)
+        if self.footprint_guard is not None:
+            if self.footprints is None:
+                raise ValueError("footprint guard requires footprint planning")
+            _validate_capability("footprint_guard", self.footprint_guard, FootprintGuardCapability)
         if self.filesystem is not None and self.storage is not None:
             raise ValueError("a resource must select one data addressing model")
         if self.transfer is not None and self.filesystem is None and self.storage is None:

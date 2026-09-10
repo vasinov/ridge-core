@@ -58,8 +58,10 @@ Put the global `--lock-token TOKEN` before the operation command, or set
 `RIDGE_LOCK_TOKEN`, to use that reservation across CLI invocations. The token is
 also required for renewal and release. Inspection/listing never return tokens.
 Lock inspection returns structured `{domain, scope, mode}` claim lists;
-`scope: null` means the whole domain. Exact S3 operations may use object scopes,
-while `locks acquire` still reserves whole resources.
+`scope: null` means the whole domain. `locks acquire RESOURCE:OPERATION[:PATH] ...`
+accepts optional file/tree paths or exact S3 keys; omitted paths reserve whole resources.
+For example, `locks acquire files:data.read:manifest.json files:data.write:manifest.json`
+protects a read–modify–write sequence while allowing work on other files.
 See [coordination](guides/coordination.md) for release, expiry, and uncertain work.
 `ridge resources` and `ridge inspect` show both supported and policy-allowed
 operations. An authorization denial is an expected Ridge error and exits with

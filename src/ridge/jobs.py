@@ -13,8 +13,8 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import suppress
+from collections.abc import Callable, Generator, Mapping, Sequence
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal, cast
@@ -30,7 +30,7 @@ from ridge._job_process import (
 )
 from ridge.claims import Claim
 from ridge.coordination import Coordination, read_scopes
-from ridge.errors import JobConflictError, JobNotFoundError, RidgeError
+from ridge.errors import JobConflictError, JobNotFoundError, LockConflictError, RidgeError
 from ridge.model import Job, JobKind, JobLog, JobPage, JobScope, JobStatus, JobSummary, Operation
 
 _TERMINAL = {
@@ -72,9 +72,60 @@ class JobManager:
         lock_token: str | None = None,
         local_only: bool = False,
         claims: Sequence[Claim] | None = None,
+        prepare_claims: Callable[[], Sequence[Claim]] | None = None,
     ) -> Job:
         if idempotency_key == "":
             raise ValueError("idempotency_key must be non-empty or None")
+        with self._preparation_lock(idempotency_key if prepare_claims else None):
+            return self._submit(
+                kind,
+                scopes,
+                request,
+                payload=payload,
+                idempotency_key=idempotency_key,
+                lock_token=lock_token,
+                local_only=local_only,
+                claims=claims,
+                prepare_claims=prepare_claims,
+            )
+
+    @contextmanager
+    def _preparation_lock(self, key: str | None) -> Generator[None]:
+        if key is None:
+            yield
+            return
+        owner = self.access.token if self.access else ""
+        identity = hashlib.sha256((owner + "\0" + key).encode()).hexdigest()
+        directory = self.directory / "submissions"
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # Keep the inode: unlinking after release could split concurrent waiters.
+        with (directory / (identity + ".lock")).open("a+b") as handle:
+            deadline = time.monotonic() + 60
+            while True:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise LockConflictError(
+                            "identical-key submission is still being prepared; retry the same key"
+                        ) from None
+                    time.sleep(0.05)
+            yield
+
+    def _submit(
+        self,
+        kind: JobKind,
+        scopes: Sequence[JobScope],
+        request: Mapping[str, object],
+        *,
+        payload: bytes | None = None,
+        idempotency_key: str | None = None,
+        lock_token: str | None = None,
+        local_only: bool = False,
+        claims: Sequence[Claim] | None = None,
+        prepare_claims: Callable[[], Sequence[Claim]] | None = None,
+    ) -> Job:
         payload_digest = hashlib.sha256(payload).hexdigest() if payload is not None else None
         request_json = encode_json(dict(request))
         scopes_json = encode_json(
@@ -100,24 +151,31 @@ class JobManager:
         ).hexdigest()
         connection = self.connect()
         try:
-            # Serialize the idempotency lookup and insert across concurrent callers.
-            connection.execute("BEGIN IMMEDIATE")
-            access = self.access.check(connection, scopes) if self.access else None
-            owner = access.scope.id if access else ""
-            if idempotency_key is not None:
-                existing = connection.execute(
-                    "SELECT * FROM jobs WHERE idempotency_key = ? AND access_scope_id = ?",
-                    (idempotency_key, owner),
-                ).fetchone()
-                if existing is not None:
-                    if existing["request_digest"] != request_digest:
-                        raise JobConflictError(
-                            "idempotency key already belongs to a different job request"
-                        )
-                    existing_id = str(existing["id"])
-                    connection.rollback()
-                    connection.close()
-                    return self.get(existing_id)
+            while True:
+                # Replay precedes filesystem preparation. Repeat authority and
+                # idempotency checks after preparation, outside this transaction.
+                connection.execute("BEGIN IMMEDIATE")
+                access = self.access.check(connection, scopes) if self.access else None
+                owner = access.scope.id if access else ""
+                if idempotency_key is not None:
+                    existing = connection.execute(
+                        "SELECT * FROM jobs WHERE idempotency_key = ? AND access_scope_id = ?",
+                        (idempotency_key, owner),
+                    ).fetchone()
+                    if existing is not None:
+                        if existing["request_digest"] != request_digest:
+                            raise JobConflictError(
+                                "idempotency key already belongs to a different job request"
+                            )
+                        existing_id = str(existing["id"])
+                        connection.rollback()
+                        connection.close()
+                        return self.get(existing_id)
+                if prepare_claims is None:
+                    break
+                connection.rollback()
+                claims = prepare_claims()
+                prepare_claims = None
 
             job_id = str(uuid.uuid4())
             self.coordination.admit(

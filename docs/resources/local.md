@@ -30,6 +30,10 @@ Delegated grants can select a narrower [`data_root`](../guides/delegation.md#nar
 Each view directory must exist when used; scope creation does not create it.
 Data paths are view-relative, while compute and its `--cwd` retain the configured root.
 
+Supported [filesystem footprints](../guides/coordination.md#action-defined-footprints)
+allow independent files in the same directory to overlap, including explicit
+multi-step path reservations. Unproven resolution and effects retain broad protection.
+
 Filesystem paths are relative to the configured root. Absolute paths and paths
 resolving outside the root fail; contained paths such as `nested/../file` are
 accepted. Writes create missing parents and replace existing regular files or

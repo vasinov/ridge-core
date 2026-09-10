@@ -124,8 +124,11 @@ ambiguous shared-resource ownership with the user.
 
 Exact S3 operations can overlap on different full keys, including delegated
 prefixes, when every alias in the lock domain has compatible coordinates.
-Filesystem operations, compute, and explicit sessions remain whole-resource;
-incompatible aliases also retain broad locking. Do not assign different lock keys
+Supported filesystem operations can overlap on distinct paths, including sibling
+files. Explicit sessions may reserve file/tree paths or exact S3 keys; omitted paths
+and compute remain whole-resource. See the protected-resolution and fallback rules
+in [coordination](https://vasinov.github.io/ridge-core/guides/coordination/#action-defined-footprints).
+Incompatible aliases retain broad locking. Do not assign different lock keys
 to overlapping resources merely to obtain parallelism. Inspect structured `claims`
 for the effective domain, scope and mode when diagnosing contention.
 

@@ -220,7 +220,8 @@ def test_copy_failure_after_dispatch_still_retains_claim(tmp_path: Path) -> None
     entries = cast(list[dict[str, object]], service.list_locks()["entries"])
     assert len(entries) == 1 and entries[0]["status"] == "uncertain"
     with pytest.raises(LockConflictError):
-        service.write_data("c", "unrelated", b"blocked")
+        service.write_data("c", "output", b"blocked")
+    service.write_data("c", "unrelated", b"independent")
     assert not (tmp_path / "data/output").exists()
 
 

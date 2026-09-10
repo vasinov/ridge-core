@@ -144,7 +144,12 @@ class Coordination:
         return row
 
     def acquire(
-        self, scopes: Sequence[JobScope], *, lease_seconds: float = 300, wait_seconds: float = 0
+        self,
+        scopes: Sequence[JobScope],
+        *,
+        lease_seconds: float = 300,
+        wait_seconds: float = 0,
+        claims: Sequence[Claim] | None = None,
     ) -> dict[str, object]:
         if (
             isinstance(lease_seconds, bool)
@@ -163,7 +168,7 @@ class Coordination:
             try:
                 with self.transaction() as connection:
                     access = self.access.check(connection, scopes) if self.access else None
-                    claims = self.claims(scopes)
+                    claims = self.claims(scopes) if claims is None else normalize(claims)
                     self._check(connection, claims, None)
                     token = secrets.token_urlsafe(32)
                     identity = str(uuid.uuid4())
@@ -244,7 +249,7 @@ class Coordination:
                 raise LockOwnershipError("operation was not declared by this session")
             held = decode_claims(row["claims_json"])
             if not covers(held, claims):
-                raise LockOwnershipError("resource lock keys changed; acquire a new session")
+                raise LockOwnershipError("operation effects exceed the session reservation")
             session = row["id"]
         self._check(connection, claims, session)
         connection.execute(

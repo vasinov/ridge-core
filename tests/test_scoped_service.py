@@ -141,7 +141,7 @@ def test_revocation_does_not_hold_or_release_admitted_operation(
             entries = operator.list_locks()["entries"]
             assert len(cast(list[object], entries)) == 1
             with pytest.raises(LockConflictError):
-                operator.write_data("b", "denied", b"no")
+                operator.write_data("b", "admitted", b"no")
         finally:
             finish.set()
         result.result(timeout=5)

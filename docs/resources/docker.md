@@ -23,6 +23,10 @@ Delegated [`data_root` views](../guides/delegation.md#narrow-data-views) are
 checked by the helper inside the container when used, including every inherited
 symlink boundary. Scope creation does not contact or modify the container.
 
+[Filesystem footprint validation](../guides/coordination.md#action-defined-footprints)
+runs inside the container under admitted claims. Supported file/tree operations and
+path reservations can overlap; compute and unsupported mappings retain broad protection.
+
 Set `executable` when the Docker CLI is not available as `docker` on `PATH`.
 
 The root must be absolute. Missing, stopped, or paused containers and unavailable

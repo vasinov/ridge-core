@@ -13,7 +13,7 @@ import typer
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from ridge._scope_wire import (
     AccessModel,
@@ -30,8 +30,8 @@ from ridge.model import (
     FileStat,
     Job,
     JobLog,
-    JobScope,
     ListEntry,
+    LockRequest,
     ObjectEntry,
     ObjectStat,
     Operation,
@@ -155,6 +155,13 @@ class ExecuteResult(_WireModel):
 class JobScopeResult(_WireModel):
     resource: str
     operation: str
+
+
+class LockRequestInput(JobScopeResult):
+    path: str | None = Field(
+        default=None,
+        description="Resource-relative file or tree target; omit to reserve the whole resource. Ridge derives all effects; calls must fit the reservation.",
+    )
 
 
 class ClaimResult(_WireModel):
@@ -692,12 +699,12 @@ def create_server(service: RidgeService) -> MCPServer[None]:
     @server.tool(annotations=_EXECUTE, structured_output=True)
     @_tool_errors
     def acquire_locks(
-        scopes: list[JobScopeResult], lease_seconds: float = 300, wait_seconds: float = 0
+        scopes: list[LockRequestInput], lease_seconds: float = 300, wait_seconds: float = 0
     ) -> LockAcquisitionResult:
-        """Reserve all declared resource/operation pairs; return a secret session token."""
+        """Atomically reserve declared operations and optional file/tree paths; return a secret token."""
         return LockAcquisitionResult.model_validate(
             service.acquire_locks(
-                [JobScope(s.resource, Operation(s.operation)) for s in scopes],
+                [LockRequest(s.resource, Operation(s.operation), s.path) for s in scopes],
                 lease_seconds=lease_seconds,
                 wait_seconds=wait_seconds,
             )

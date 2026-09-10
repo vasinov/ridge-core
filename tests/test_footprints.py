@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ridge import AccessGrant, Footprint, JobScope, Operation, RidgeService
+from ridge import AccessGrant, Footprint, JobScope, LockRequest, Operation, RidgeService
 from ridge._access import ScopeAccessError
 from ridge._job_process import current_job
 from ridge._planning import FootprintPlanner
@@ -308,9 +308,14 @@ def test_bounds_and_invalid_provider_plans(tmp_path: Path, monkeypatch: pytest.M
             assert connection.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0
 
 
-def test_filesystems_stay_broad(tmp_path: Path) -> None:
+def test_filesystem_candidate_is_pure_and_compute_stays_broad(tmp_path: Path) -> None:
     planner = FootprintPlanner(ResourceRegistry((LocalResource("local", tmp_path),)), {})
-    assert planner.plan((JobScope("local", WRITE),), ("a",)) == (Claim(None, "exclusive", "local"),)
+    assert planner.plan((JobScope("local", WRITE),), ("a",)) == (
+        Claim(("filesystem", "a"), "exclusive", "local"),
+    )
+    assert planner.plan((JobScope("local", Operation.COMPUTE_EXEC),), ("a",)) == (
+        Claim(None, "exclusive", "local"),
+    )
 
 
 def test_invalid_coordinate_rejected_before_admission(
@@ -322,3 +327,19 @@ def test_invalid_coordinate_rejected_before_admission(
         with pytest.raises(ValueError, match="coordinate"):
             service.write_data("a", "key", b"no")
     assert not (tmp_path / ".ridge").exists()
+
+
+def test_exact_object_reservations_preserve_literal_keys_and_reconnect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, service = workspace(tmp_path)
+    monkeypatch.setattr(S3Resource, "write_object", Mock())
+    value = service.acquire_locks([LockRequest("a", WRITE, "child/key")])
+    service.write_data("a", "child/key/subkey", b"independent opaque key")
+    with pytest.raises(LockConflictError):
+        service.write_data("b", "key", b"same exact key")
+    bound = RidgeService.from_config(path).with_lock(str(value["token"]))
+    bound.write_data("a", "child/key", b"owned")
+    with pytest.raises(LockOwnershipError):
+        bound.write_data("a", "child/other", b"outside reservation")
+    service.release_locks(str(value["token"]))

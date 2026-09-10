@@ -335,7 +335,7 @@ no scope retention/deletion API.
 `_views` binds lazy data capability adapters using immutable, parent-relative
 `data_root` chains. Providers own syntax validation and physical narrowing; the
 coordinator remains path-agnostic. Every data capability call resolves the complete
-chain within its admitted claim (whole-resource for filesystems). Compute remains the original
+chain within its admitted claim. Compute remains the original
 capability. Job workers recover their admitted chain from immutable scope records
 without requiring a still-active scope or retaining bearer credentials.
 
@@ -474,14 +474,29 @@ modes; malformed plans fail before admission. Plans over 64 claims, 32 scope
 components or 16 KiB encoded scope collapse to whole-domain claims at the strongest
 requested mode. These are planning bounds, not a universal resource hierarchy.
 
-Narrowing covers exact S3 data read/stat/write/delete and copy
-endpoints. S3 maps full keys to single opaque components, preserving literal key
-text and inherited prefixes; same-bucket aliases share coordinates. Listing,
-compute, filesystem operations and incompatible alias groups stay broad. Sessions
-still reserve whole domains. Foreground/background workflows use the same planner;
-workers replan against their checked inventory and immutable view roots and verify
-coverage by persisted claims before dispatch. Planning never resolves mutable
-filesystem state before acquiring protection. No incremental acquisition is added.
+S3 maps exact keys to single opaque components, preserving literal text and inherited
+prefixes. Filesystem plans use a distinguished root component and normalized lexical
+path components. Existing tuple ancestry protects ancestor replacement and directory
+observations while permitting sibling-file publication. Staging-name operations stay
+broad so internal temporary siblings do not escape that protection. Compute and
+incompatible alias groups remain broad.
+
+Optional `FootprintGuardCapability` validates filesystem candidates read-only under
+their admitted claims, before effects and outside SQLite transactions. Unsupported
+resolution releases the complete temporary candidate before fresh broad admission;
+validation exceptions release it without dispatch. Explicit path reservations never
+silently broaden. Scope creation and pure planning perform no mutable path inspection.
+The initial coverage and bounded tree validation rules live in
+[coordination](guides/coordination.md#action-defined-footprints).
+
+Filesystem job preparation uses temporary protected validation outside transactions,
+after an idempotency check. Final admission repeats authority/idempotency checks and
+inserts job and claims atomically. Workers replan and revalidate under persisted
+claims; changed coverage fails before effects, without additional acquisition.
+An advisory lock keyed by the caller scope and idempotency key serializes duplicate
+preparation through insertion. Its inode is retained; contenders wait at most 60
+seconds before a retryable conflict. Different keys acquire no shared preparation lock.
+Managed renewal, closure, cancellation and uncertainty retain their existing owners.
 
 Persisted `claims_json` and frontend inspection use one structured claim list
 (`domain`, nullable component-array `scope`, `mode`), not the earlier development
@@ -492,7 +507,8 @@ Lock identity is the shared state directory plus a resource's `lock_key`, defaul
 to its name. Aliases and overlapping resources must explicitly share keys. Resource
 operations determine shared/exclusive modes; authorization remains operation-specific
 and is checked before admission and again on each call. A session reserves all
-declared pairs atomically, without upgrades. Its token does not confer permissions.
+declared pairs and optional resource-relative `LockRequest` paths atomically, without
+upgrades. Omitted paths retain whole-domain reservations. Its token does not confer permissions.
 
 Operations are registered before dispatch, including within explicit sessions.
 Conflicting operations in the same session cannot overlap. Session closure stops

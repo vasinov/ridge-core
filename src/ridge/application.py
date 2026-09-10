@@ -24,12 +24,16 @@ from ridge._access import (
 from ridge._planning import FootprintPlanner
 from ridge._views import bind_data_views
 from ridge.authorization import AuthorizationPolicy, AuthorizationRequest, Authorizer
+from ridge.claims import Claim
 from ridge.config import LoadedConfiguration, load_configuration, read_configuration
 from ridge.coordination import Coordination
 from ridge.errors import (
     AuthorizationDeniedError,
+    ExecutionError,
     InvalidPathError,
     JobsUnavailableError,
+    LockOwnershipError,
+    ResourceUnavailableError,
     UnsupportedOperationError,
 )
 from ridge.jobs import JobManager
@@ -46,6 +50,7 @@ from ridge.model import (
     JobPage,
     JobScope,
     JobSummary,
+    LockRequest,
     ObjectStat,
     Operation,
     ResourceInspection,
@@ -309,11 +314,41 @@ class RidgeService:
     def acquire_locks(
         self, scopes: Sequence[JobScope], *, lease_seconds: float = 300, wait_seconds: float = 0
     ) -> dict[str, object]:
+        paths = tuple(s.path if isinstance(s, LockRequest) else None for s in scopes)
+        scopes = tuple(JobScope(s.resource, s.operation) for s in scopes)
         self._authorize_scopes(scopes)
+        for action, path in zip(scopes, paths, strict=True):
+            if path is not None and any(
+                claim.scope is None for claim in self._planner.plan((action,), (path,))
+            ):
+                raise LockOwnershipError(
+                    "cannot establish a narrow reservation for this target; use a whole-resource session"
+                )
+        claims = self._planner.plan(scopes, paths)
         self._reconcile_jobs()
-        return self._coordination().acquire(
-            scopes, lease_seconds=lease_seconds, wait_seconds=wait_seconds
+        value = self._coordination().acquire(
+            scopes,
+            lease_seconds=lease_seconds,
+            wait_seconds=wait_seconds,
+            claims=claims,
         )
+        try:
+            if not self._planner.validate(scopes, paths, claims):
+                raise LockOwnershipError(
+                    "path resolution or tree effects require a whole-resource reservation"
+                )
+            value = {
+                **self._coordination().session_action(str(value["token"])),
+                "token": value["token"],
+            }
+        except BaseException:
+            # This request owns the unreturned token. Close its failed acquisition
+            # even if its access scope was revoked during read-only validation.
+            Coordination(self._coordination().directory).session_action(
+                str(value["token"]), release=True
+            )
+            raise
+        return value
 
     @_fresh_access
     def renew_locks(self, token: str) -> dict[str, object]:
@@ -389,28 +424,57 @@ class RidgeService:
     @contextmanager
     def _operation(
         self, scopes: Sequence[JobScope], paths: Sequence[str | None] | None = None
-    ) -> Generator[None]:
+    ) -> Generator[tuple[Claim, ...]]:
         from ridge._job_process import current_job
 
         if self._jobs is None:
             if self._lock_token is not None:
                 raise JobsUnavailableError("coordination requires configured shared state")
-            yield
+            yield ()
             return
         job_id = current_job.get()
         claims = self._planner.plan(scopes, paths)
         if job_id is not None:
             self._coordination().validate_job(job_id, scopes, claims)
-            yield
+            if not self._planner.validate(scopes, paths, claims):
+                claims = self._coordination().claims(scopes)
+                self._coordination().validate_job(job_id, scopes, claims)
+            yield claims
             return
         self._reconcile_jobs()
-        with self._coordination().operation(
-            scopes,
-            token=self._operation_token(),
-            local_only=self._local_scopes(scopes),
-            claims=claims,
-        ):
-            yield
+        while True:
+            error: BaseException | None = None
+            with self._coordination().operation(
+                scopes,
+                token=self._operation_token(),
+                local_only=self._local_scopes(scopes),
+                claims=claims,
+            ):
+                try:
+                    valid = self._planner.validate(scopes, paths, claims)
+                except BaseException as exc:  # noqa: BLE001 - rethrow after releasing read-only preparation
+                    # Validation is read-only; no effectful backend was dispatched.
+                    error = exc
+                    valid = False
+                if valid:
+                    yield claims
+                    return
+            if error is not None:
+                raise error
+            # Release the complete candidate before a fresh, broad admission.
+            # A caller reservation still has to cover that admission.
+            claims = self._coordination().claims(scopes)
+
+    def _submission_claims(
+        self, scopes: Sequence[JobScope], paths: Sequence[str]
+    ) -> tuple[Claim, ...]:
+        try:
+            with self._operation(scopes, paths) as claims:
+                return claims
+        except (OSError, ExecutionError, ResourceUnavailableError):
+            # Availability failures still belong to the durable background attempt.
+            # Without a proven narrow mapping, final admission must cover broadly.
+            return self._coordination().claims(scopes)
 
     @_fresh_access
     def list_resources(self) -> tuple[ResourceInspection, ...]:
@@ -543,7 +607,7 @@ class RidgeService:
         target = self._data(
             resource, Operation.DATA_LIST, {"path": path, "cursor": cursor, "limit": limit}
         )
-        with self._operation((JobScope(resource, Operation.DATA_LIST),)):
+        with self._operation((JobScope(resource, Operation.DATA_LIST),), (path or ".",)):
             if target.storage is not None:
                 page = target.storage.list_objects(
                     "" if path is None else path, cursor=cursor, limit=limit
@@ -614,7 +678,7 @@ class RidgeService:
             scopes,
             {"resource": resource, "path": path},
             payload=content,
-            claims=self._planner.plan(scopes, (path,)),
+            prepare_claims=lambda: self._submission_claims(scopes, (path,)),
             idempotency_key=idempotency_key,
             lock_token=self._operation_token(),
             local_only=self._local_scopes(scopes),
@@ -687,7 +751,7 @@ class RidgeService:
             JobKind.DELETE,
             scopes,
             {"resource": resource, "path": path, "recursive": recursive},
-            claims=self._planner.plan(scopes, (path,)),
+            prepare_claims=lambda: self._submission_claims(scopes, (path,)),
             idempotency_key=idempotency_key,
             lock_token=self._operation_token(),
             local_only=self._local_scopes(scopes),
@@ -748,7 +812,9 @@ class RidgeService:
                 "source": f"{request.source.resource}:{request.source.path}",
                 "destination": f"{request.destination.resource}:{request.destination.path}",
             },
-            claims=self._planner.plan(scopes, (request.source.path, request.destination.path)),
+            prepare_claims=lambda: self._submission_claims(
+                scopes, (request.source.path, request.destination.path)
+            ),
             idempotency_key=idempotency_key,
             lock_token=self._operation_token(),
             local_only=self._local_scopes(scopes),

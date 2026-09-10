@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import cast
 
-from ridge.claims import Claim, Footprint, normalize
+from ridge.claims import Claim, Footprint, covers, normalize
 from ridge.model import JobScope
 from ridge.registry import ResourceRegistry
 
@@ -84,6 +84,27 @@ class FootprintPlanner:
             else:
                 claims.extend(Claim(item.scope, item.mode, domain) for item in planned)
         return normalize(claims)
+
+    def validate(
+        self,
+        scopes: Sequence[JobScope],
+        paths: Sequence[str | None] | None,
+        claims: Sequence[Claim],
+    ) -> bool:
+        """No dispatch: the caller must already own every candidate claim."""
+        for action, path in zip(scopes, paths or (None,) * len(scopes), strict=True):
+            domain = self.keys.get(action.resource, action.resource)
+            mode = "shared" if action.operation.effect == "read" else "exclusive"
+            if path is None or covers(claims, (Claim(None, mode, domain),)):
+                continue
+            guard = self.registry.get(action.resource).capabilities.footprint_guard
+            if guard is not None:
+                valid = guard.validate_footprint(path, self.roots.get(action.resource, ()))
+                if type(valid) is not bool:
+                    raise ValueError("footprint guard must return a boolean")
+                if not valid:
+                    return False
+        return True
 
     @staticmethod
     def _validate_coordinate(coordinate: object) -> None:

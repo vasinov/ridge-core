@@ -106,7 +106,7 @@ Because MCP inline reads first determine whether content fits in model context,
 perform that preliminary metadata operation.
 
 Resource operations automatically acquire claims. To reserve resources across
-calls, `acquire_locks` accepts `scopes: [{resource, operation}, ...]`, optional
+calls, `acquire_locks` accepts `scopes: [{resource, operation, path?}, ...]`, optional
 `lease_seconds` (default 300), and `wait_seconds` (default 0). Pass the returned
 `token` as `lock_token` on execution, data, and copy calls; session reads must
 declare both `data.stat` and `data.read`. Use `renew_locks` and `release_locks`
@@ -117,8 +117,10 @@ MCP disconnection and can also be used from the CLI. See
 [coordination and recovery](guides/coordination.md).
 
 Lock metadata's `claims` is a list of `{domain, scope, mode}` values; `scope` is
-an opaque component array or `null` for the whole domain. Exact S3 operations can
-overlap on different objects; `acquire_locks` still reserves whole resources.
+an opaque component array or `null` for the whole domain. A reservation's optional
+`path` names a filesystem file/tree or exact S3 key. Omit it to reserve the whole
+resource. Different files in the same directory can overlap when their complete
+effects are covered; unsupported narrow reservations fail rather than expanding.
 
 Hosts that own a multi-call workflow can use the Python `ManagedMCPSession`
 caller helper for automatic renewal and token injection. This requires host

@@ -21,7 +21,7 @@ from ridge._scope_wire import (
 from ridge.application import RidgeService
 from ridge.config import load_configuration
 from ridge.errors import ExecutionTimeoutError, RidgeError, format_error
-from ridge.model import JobScope, Operation
+from ridge.model import JobScope, LockRequest, Operation
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -237,7 +237,12 @@ def access_inspect(ctx: typer.Context) -> None:
 @_handle_errors
 def locks_acquire(
     ctx: typer.Context,
-    scopes: Annotated[list[str], typer.Argument(help="RESOURCE:OPERATION pairs.")],
+    scopes: Annotated[
+        list[str],
+        typer.Argument(
+            help="RESOURCE:OPERATION[:PATH] reservations; omit PATH for the whole resource."
+        ),
+    ],
     lease_seconds: float = 300,
     wait_seconds: float = 0,
 ) -> None:
@@ -245,8 +250,9 @@ def locks_acquire(
     for value in scopes:
         resource, separator, operation = value.partition(":")
         if not separator:
-            raise ValueError("scope must be RESOURCE:OPERATION")
-        declared.append(JobScope(resource, Operation(operation)))
+            raise ValueError("scope must be RESOURCE:OPERATION[:PATH]")
+        operation, separator, path = operation.partition(":")
+        declared.append(LockRequest(resource, Operation(operation), path if separator else None))
     typer.echo(
         json.dumps(
             _service(ctx).acquire_locks(

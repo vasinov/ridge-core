@@ -52,6 +52,9 @@ use `acquire_locks([JobScope(resource, Operation.DATA_WRITE), ...])` and pass th
 returned token to `with_lock(token)`. That returns a separate service view, so
 concurrent callers do not mutate one another's session selection. Close ownership
 with `release_locks(token)`; see [session semantics](guides/coordination.md).
+Use `LockRequest(resource, operation, path)` instead of `JobScope` to reserve a
+file/tree or exact object. Both `acquire_locks` and managed session helpers accept
+mixed whole-resource and path requests. Ridge derives claims; calls must fit them.
 
 Lock inspection exposes structured `{domain, scope, mode}` claim lists. Providers
 may implement public `FootprintCapability` using `Footprint` values for pure action
@@ -128,6 +131,10 @@ Omitting `data_root` inherits the parent's view; compute is not narrowed.
 ::: ridge.resource.DeleteCapability
 
 ::: ridge.model.DeleteResult
+
+::: ridge.model.LockRequest
+
+::: ridge.resource.FootprintGuardCapability
 
 ## Provider construction
 

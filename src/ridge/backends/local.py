@@ -10,7 +10,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import BinaryIO
 
+from ridge.backends._footprints import FilesystemFootprints
 from ridge.backends._scripts.deletion import DeletePathError, delete_path
+from ridge.backends._scripts.footprints import validate_filesystem_footprint
 from ridge.backends._scripts.roots import RootViewError, narrow_root, validate_root
 from ridge.backends._source import TRANSFER_HELPER_SOURCE
 from ridge.backends._transfer import ProcessTransferOperations
@@ -171,7 +173,17 @@ class _InspectableResource:
         self._filesystem = _RootedFilesystem(root)
         self._configured_properties = dict(configured_properties or {})
         self._transfer = ProcessTransferOperations(self.name, self._transfer_command)
-        self.capabilities = ResourceCapabilities(filesystem=self, transfer=self, delete=self)
+        footprints = FilesystemFootprints(
+            ("local-filesystem", str(self.root)),
+            lambda relatives: validate_filesystem_footprint(self.root, relatives),
+        )
+        self.capabilities = ResourceCapabilities(
+            filesystem=self,
+            transfer=self,
+            delete=self,
+            footprints=footprints,
+            footprint_guard=footprints,
+        )
 
     @property
     def root(self) -> Path:
@@ -251,6 +263,8 @@ class LocalResource(_InspectableResource):
             transfer=self,
             delete=self,
             data_views=self,
+            footprints=self.capabilities.footprints,
+            footprint_guard=self.capabilities.footprint_guard,
         )
 
     def validate_data_root(self, root: str) -> None:

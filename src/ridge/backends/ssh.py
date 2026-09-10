@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from copy import copy
 from pathlib import Path, PurePosixPath
 
+from ridge.backends._footprints import FilesystemFootprints
 from ridge.backends._helper import HelperOperations, HelperTransportResult
 from ridge.backends._scripts.roots import validate_root
 from ridge.backends._source import HELPER_SOURCE, TRANSFER_HELPER_SOURCE
@@ -63,12 +64,28 @@ class SshResource:
         self._operations = HelperOperations(self)
         self._data_roots: tuple[str, ...] = ()
         self._transfer = ProcessTransferOperations(self.name, self._transfer_command)
+        footprints = FilesystemFootprints(
+            (
+                "ssh-filesystem",
+                ssh_executable,
+                host,
+                str(port or 22),
+                user or "<ambient>",
+                str(identity_file) if identity_file else "<ambient-identity>",
+                str(known_hosts_file) if known_hosts_file else "<ambient-trust>",
+                python_executable,
+                self.root,
+            ),
+            self._operations.validate_footprint,
+        )
         self.capabilities = ResourceCapabilities(
             compute=self,
             filesystem=self,
             transfer=self,
             delete=self,
             data_views=self,
+            footprints=footprints,
+            footprint_guard=footprints,
         )
 
     def validate_data_root(self, root: str) -> None:

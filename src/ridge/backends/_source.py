@@ -6,6 +6,8 @@ _SCRIPTS = files("ridge.backends").joinpath("_scripts")
 _ROOTS_SOURCE = _SCRIPTS.joinpath("roots.py").read_text(encoding="utf-8") + "\n"
 HELPER_SOURCE = (
     _ROOTS_SOURCE
+    + _SCRIPTS.joinpath("footprints.py").read_text(encoding="utf-8")
+    + "\n"
     + _SCRIPTS.joinpath("deletion.py").read_text(encoding="utf-8")
     + "\n"
     + _SCRIPTS.joinpath("operations.py").read_text(encoding="utf-8")

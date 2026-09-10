@@ -32,6 +32,8 @@ one separate worker process group; built-in local copy helpers stay in that grou
 Use an idempotency key when a caller may lose the submission response and retry.
 The same key and identical request return the existing job. Reusing the key for
 different content or parameters fails.
+Concurrent preparation of the same key is serialized separately from resource claims;
+after 60 seconds a contender reports a conflict and can retry with that same key.
 
 Local execution logs are readable while the command runs. Docker and SSH helper
 output currently becomes readable after completion. Log reads are bounded and
@@ -75,6 +77,9 @@ Changing another resource in the same lock domain can affect alias compatibility
 and broaden the required footprint; that rejects an already-narrow job before
 dispatch. It does not silently acquire more locks. Changes in unrelated domains
 do not affect this coverage check.
+Filesystem workers also revalidate path resolution under those claims. A symlink,
+mount, or other change requiring broader effects fails before dispatch; jobs never
+upgrade their reservation. See [filesystem coverage](coordination.md#action-defined-footprints).
 
 Execution uses that checked document and rechecks the job's required grants.
 Removing an unrelated grant is harmless; removing a required grant denies execution.

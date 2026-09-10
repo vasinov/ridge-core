@@ -50,8 +50,8 @@ make it easy to inspect the result; they are not performance measurements.
    execution job. The parent inspects those descendant jobs using delegation
    authority, without direct compute access.
 5. **Reconnect and publish.** New child processes reuse the same handles to copy
-   their metrics into their results views. Publication is sequenced because these
-   local result directories share one whole-resource lock domain.
+   their metrics into their results views. This example sequences publication;
+   compatible filesystem footprints also permit independent result paths to overlap.
 6. **Collect and close.** The parent reads the results, revokes child scopes,
    checks that closed handles fail, and verifies unchanged inputs and no remaining
    claims. The bootstrap host closes the parent scope.

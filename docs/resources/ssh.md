@@ -1,5 +1,9 @@
 # SSH resources
 
+Supported [filesystem footprints](../guides/coordination.md#action-defined-footprints)
+and path reservations permit independent data operations. Read-only validation runs
+on the remote host under admitted claims; compute and unsupported mappings stay broad.
+
 An SSH resource targets an existing POSIX account through the system OpenSSH
 client:
 

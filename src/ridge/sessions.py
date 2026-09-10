@@ -16,7 +16,7 @@ from mcp import Client
 from mcp.types import CallToolResult
 
 from ridge.errors import LockOwnershipError
-from ridge.model import JobScope
+from ridge.model import JobScope, LockRequest
 
 if TYPE_CHECKING:
     from ridge.application import RidgeService
@@ -142,7 +142,9 @@ class ManagedMCPSession:
     Tool results retain the MCP SDK's ordinary error/result representation.
     """
 
-    _TOOLS = frozenset({"execute", "list_data", "read_data", "write_data", "stat_data", "copy"})
+    _TOOLS = frozenset(
+        {"execute", "list_data", "read_data", "write_data", "delete_data", "stat_data", "copy"}
+    )
 
     def __init__(
         self,
@@ -190,7 +192,16 @@ class ManagedMCPSession:
             "acquire_locks",
             {
                 "scopes": [
-                    {"resource": s.resource, "operation": s.operation.value} for s in self._scopes
+                    {
+                        "resource": s.resource,
+                        "operation": s.operation.value,
+                        **(
+                            {"path": s.path}
+                            if isinstance(s, LockRequest) and s.path is not None
+                            else {}
+                        ),
+                    }
+                    for s in self._scopes
                 ],
                 "lease_seconds": self._lease,
                 "wait_seconds": self._wait,

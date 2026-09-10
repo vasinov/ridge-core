@@ -18,7 +18,9 @@ on macOS and Linux.
   delegation, set expiry, revoke scopes, and supervise descendant jobs.
 - Run durable background jobs with reconnectable status, logs, cancellation,
   and paginated discovery. Coordinate participating operations with shared managed
-  state, resource reservations, sessions, and exact S3 object footprints.
+  state, file/tree reservations, sessions, filesystem footprints, and exact S3
+  object footprints. Independent files in one directory can overlap; protected
+  resolution falls back broadly where complete effects cannot be established.
 - Connect agent clients using documented Codex, Claude, desktop, VS Code, and
   LangChain recipes, local plugin packaging, and executable delegation examples.
 - Publish versioned wheel/source distributions through verified release automation.

@@ -21,9 +21,9 @@ For two independent evaluations, share read access to the project and dataset,
 assign a distinct existing worker to each child, and narrow each child's results
 view to its own location. Keep resource names and workspace state unchanged.
 
-An access scope does not reserve resources. Distinct directories on one filesystem
-worker still share whole-resource coordination; use distinct workers for parallel
-compute, or sequence work on a shared worker. See
+An access scope does not reserve resources. Independent data paths can overlap,
+including files in the same directory. Compute still reserves the whole resource;
+use distinct workers for parallel compute, or sequence work on a shared worker. See
 [coordination](coordination.md) for multi-step reservations.
 
 ## Create task access
@@ -95,7 +95,7 @@ remain unchanged. A grant's data view applies to both use and further delegation
 Local, Docker, and SSH validate relative root syntax at creation (no absolute
 paths or `..` components). On every data operation, each inherited directory must
 exist, be a directory, and resolve within its parent view, including symlinks.
-These checks run under the whole-resource operation claim; creation never contacts
+These checks run under the admitted operation claims; creation never contacts
 the remote backend or creates a directory. Missing roots can be prepared separately
 by an authorized parent. Data paths and returned listings are relative to the final
 view. Copy and background data jobs use that same view; deletion cannot remove its root.

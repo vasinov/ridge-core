@@ -153,6 +153,10 @@ Or connect an agent's MCP client to:
 
 The CLI, MCP server, and Python API share the same resource access and coordination.
 
+Agents can reserve individual files across read–modify–write workflows while others
+publish different files in the same directory. Ridge checks complete filesystem
+effects before narrowing; see [resource coordination](docs/guides/coordination.md).
+
 Connect [Codex, Claude Code, desktop clients, or LangChain](https://vasinov.github.io/ridge-core/integrations/),
 package a local plugin, or try the
 [runnable local workflow](https://vasinov.github.io/ridge-core/getting-started/).
