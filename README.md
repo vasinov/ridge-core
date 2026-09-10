@@ -6,7 +6,7 @@
 
 ### A resource mesh for AI agents
 
-**Connect your resources. Let agents work across them—and delegate access as the work grows.**
+**Connect your resources. Let agents work across them. Delegate access as the work grows.**
 
 Ridge gives agents a consistent interface to resources such as local projects,
 Docker containers, SSH machines, and S3 storage. These initial providers share
